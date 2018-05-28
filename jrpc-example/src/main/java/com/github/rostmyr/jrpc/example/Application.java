@@ -2,7 +2,6 @@ package com.github.rostmyr.jrpc.example;
 
 import com.github.rostmyr.jrpc.core.client.ClientBuilder;
 import com.github.rostmyr.jrpc.core.client.ClientChannel;
-import com.github.rostmyr.jrpc.core.client.proxy.ClientProxyFactory;
 import com.github.rostmyr.jrpc.core.exception.ServerBindException;
 import com.github.rostmyr.jrpc.core.server.Server;
 import com.github.rostmyr.jrpc.core.server.ServerBuilder;
@@ -25,8 +24,7 @@ public class Application {
             .build();
 
         // create proxy
-        ClientProxyFactory proxyFactory = new ClientProxyFactory();
-        ServiceExample serviceExample = proxyFactory.create(ServiceExample.class, clientChannel);
+        ServiceExample serviceExample = clientChannel.createProxy(ServiceExample.class);
 
         // do remote calls
         int result = serviceExample.compute(new ComputeResource(10));
@@ -34,6 +32,9 @@ public class Application {
 
         String greeting = serviceExample.sayHello(new GreetingResource("World"));
         System.out.println("Greeting: " + greeting);
+
+        UserInfoResource userInfo = serviceExample.getUserInfo(new GetUserResource(1));
+        System.out.println("User info: " + userInfo);
 
         // stop the client
         clientChannel.shutdown();

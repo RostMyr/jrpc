@@ -49,7 +49,7 @@ class NettyTransportServer implements TransportServer {
 
         for (ServerServiceDefinition serviceDefinition : this.serviceDefinitions) {
             for (MethodDefinition methodDefinition : serviceDefinition.getMethods()) {
-                resourceRegistry.add(methodDefinition.getResourceId(), methodDefinition.getInputType());
+                resourceRegistry.add(methodDefinition.getInputResourceId(), methodDefinition.getInputType());
             }
         }
     }

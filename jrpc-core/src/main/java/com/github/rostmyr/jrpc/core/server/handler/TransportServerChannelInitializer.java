@@ -27,7 +27,7 @@ public class TransportServerChannelInitializer extends ChannelInitializer {
         List<ServerServiceDefinition> serviceDefinitions,
         ResourceRegistry resourceRegistry
     ) {
-        serviceDefinitionsByAddress = serviceDefinitions.stream()
+        this.serviceDefinitionsByAddress = serviceDefinitions.stream()
             .collect(collectingAndThen(toMap(ServerServiceDefinition::getName, identity()), Collections::unmodifiableMap));
         this.resourceRegistry = resourceRegistry;
     }

@@ -63,10 +63,14 @@ public class TestMethodDefinitionReader {
         // THEN
         assertThat(methodDefinitions).containsExactly(
             new MethodDefinition(
-                0, voidMethodA, lookup.unreflect(voidMethodA), NullResource.class, NullResource._resourceId),
+                0, voidMethodA, lookup.unreflect(voidMethodA), NullResource.class, NullResource._resourceId, -1
+            ),
             new MethodDefinition(
-                1, voidMethodB, lookup.unreflect(voidMethodB), NullResource.class, NullResource._resourceId),
-            new MethodDefinition(2, voidMethodC, lookup.unreflect(voidMethodC), NullResource.class, NullResource._resourceId)
+                1, voidMethodB, lookup.unreflect(voidMethodB), NullResource.class, NullResource._resourceId, -1
+            ),
+            new MethodDefinition(
+                2, voidMethodC, lookup.unreflect(voidMethodC), NullResource.class, NullResource._resourceId, -1
+            )
         );
     }
 

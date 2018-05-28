@@ -8,4 +8,6 @@ public interface ServiceExample {
     int compute(ComputeResource resource);
 
     String sayHello(GreetingResource greeting);
+
+    UserInfoResource getUserInfo(GetUserResource getUserResource);
 }

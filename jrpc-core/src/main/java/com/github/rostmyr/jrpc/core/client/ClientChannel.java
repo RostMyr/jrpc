@@ -48,4 +48,6 @@ public interface ClientChannel {
      * @return {@code true} if channel is terminated, otherwise {@code false}
      */
     boolean awaitTermination(long timeout, TimeUnit unit) throws InterruptedException;
+
+    <T> T createProxy(Class<T> clazz);
 }

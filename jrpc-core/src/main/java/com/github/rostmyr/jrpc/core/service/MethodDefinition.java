@@ -8,17 +8,24 @@ import java.util.Objects;
 
 public class MethodDefinition {
     private final int methodId;
-    private final int resourceId;
+    private final int inputResourceId;
+    private final int responseResourceId;
     private final Class<? extends Resource> inputType;
     private final ResponseType responseType;
     private final Method method;
     private final MethodHandle methodHandle;
 
     public MethodDefinition(
-        int methodId, Method method, MethodHandle methodHandle, Class<? extends Resource> inputType, int resourceId
+        int methodId,
+        Method method,
+        MethodHandle methodHandle,
+        Class<? extends Resource> inputType,
+        int inputResourceId,
+        int responseResourceId
     ) {
         this.methodId = methodId;
-        this.resourceId = resourceId;
+        this.inputResourceId = inputResourceId;
+        this.responseResourceId = responseResourceId;
         this.method = method;
         this.methodHandle = methodHandle;
         this.inputType = inputType;
@@ -29,8 +36,12 @@ public class MethodDefinition {
         return methodId;
     }
 
-    public int getResourceId() {
-        return resourceId;
+    public int getInputResourceId() {
+        return inputResourceId;
+    }
+
+    public int getResponseResourceId() {
+        return responseResourceId;
     }
 
     public Class<? extends Resource> getInputType() {
@@ -65,13 +76,13 @@ public class MethodDefinition {
         }
         MethodDefinition that = (MethodDefinition) o;
         return getMethodId() == that.getMethodId()
-            && getResourceId() == that.getResourceId()
+            && getInputResourceId() == that.getInputResourceId()
             && Objects.equals(getInputType(), that.getInputType())
             && getResponseType() == that.getResponseType();
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(getMethodId(), getResourceId(), getInputType(), getResponseType());
+        return Objects.hash(getMethodId(), getInputResourceId(), getInputType(), getResponseType());
     }
 }

@@ -12,6 +12,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.github.rostmyr.jrpc.core.client.handler.ClientHandlerInitializer;
+import com.github.rostmyr.jrpc.core.client.proxy.ClientProxyFactory;
 
 import java.net.InetSocketAddress;
 import java.util.concurrent.CompletableFuture;
@@ -29,11 +30,14 @@ public class ClientChannelImpl implements ClientChannel {
 
     private final InetSocketAddress targetAddress;
     private final Channel networkChannel;
-    private final ServerResponseListener serverResponseListener = new ServerResponseListener();
+    private final ServerResponseListener serverResponseListener;
     private final EventLoopGroup eventLoop = isLinux() ? new EpollEventLoopGroup() : new NioEventLoopGroup();
+    private final ClientProxyFactory clientProxyFactory;
 
     public ClientChannelImpl(InetSocketAddress targetAddress) {
         this.targetAddress = targetAddress;
+        this.clientProxyFactory = new ClientProxyFactory();
+        this.serverResponseListener = new ServerResponseListener(clientProxyFactory.getResourceRegistry());
 
         Bootstrap bootstrap = new Bootstrap();
 
@@ -59,6 +63,7 @@ public class ClientChannelImpl implements ClientChannel {
                 if (!future.isSuccess()) {
                     log.warn("Error during server channel shutdown '{}'", future.cause());
                 }
+                serverResponseListener.destroy();
                 eventLoop.shutdownGracefully().addListener(result -> {
                     if (!result.isSuccess()) {
                         log.warn("Error during server event loop shutdown '{}'", result.cause());
@@ -102,5 +107,10 @@ public class ClientChannelImpl implements ClientChannel {
     @Override
     public boolean awaitTermination(long timeout, TimeUnit unit) throws InterruptedException {
         return false;
+    }
+
+    @Override
+    public <T> T createProxy(Class<T> clazz) {
+        return clientProxyFactory.create(clazz, this);
     }
 }

@@ -44,10 +44,20 @@ public class MethodDefinitionReader {
         Method method = descriptor.getMethod();
         try {
             MethodHandle methodHandle = lookup.unreflect(method);
-            return new MethodDefinition(idx, method, methodHandle, inputType, getResourceId(inputType));
+            int inputResourceId = getResourceId(inputType);
+            int responseResourceId = getResponseResourceId(method.getReturnType());
+            return new MethodDefinition(idx, method, methodHandle, inputType, inputResourceId, responseResourceId);
         } catch (IllegalAccessException e) {
             throw new RuntimeException("Can't access method " + method.getName() + " in " + clazz);
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static int getResponseResourceId(Class<?> clazz) {
+        if (Resource.class.isAssignableFrom(clazz)) {
+            return getResourceId((Class<? extends Resource>) clazz);
+        }
+        return -1;
     }
 
     private static int getResourceId(Class<? extends Resource> clazz) {

@@ -15,4 +15,9 @@ public class ServiceExampleImpl implements ServiceExample {
     public String sayHello(GreetingResource greeting) {
         return "Hello, " + greeting.getName();
     }
+
+    @Override
+    public UserInfoResource getUserInfo(GetUserResource getUserResource) {
+        return new UserInfoResource("Ivan", "Ivanov");
+    }
 }
