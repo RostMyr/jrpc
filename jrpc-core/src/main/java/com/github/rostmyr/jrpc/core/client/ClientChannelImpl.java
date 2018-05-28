@@ -3,10 +3,13 @@ package com.github.rostmyr.jrpc.core.client;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelOption;
+import io.netty.channel.EventLoopGroup;
 import io.netty.channel.epoll.EpollEventLoopGroup;
 import io.netty.channel.epoll.EpollSocketChannel;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioSocketChannel;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.github.rostmyr.jrpc.core.client.handler.ClientHandlerInitializer;
 
@@ -22,15 +25,19 @@ import static com.github.rostmyr.jrpc.common.utils.SystemUtils.isLinux;
  * on 27.05.2018.
  */
 public class ClientChannelImpl implements ClientChannel {
+    private static final Logger log = LoggerFactory.getLogger(ClientChannelImpl.class);
+
     private final InetSocketAddress targetAddress;
     private final Channel networkChannel;
     private final ServerResponseListener serverResponseListener = new ServerResponseListener();
+    private final EventLoopGroup eventLoop = isLinux() ? new EpollEventLoopGroup() : new NioEventLoopGroup();
 
     public ClientChannelImpl(InetSocketAddress targetAddress) {
         this.targetAddress = targetAddress;
 
         Bootstrap bootstrap = new Bootstrap();
-        bootstrap.group(isLinux() ? new EpollEventLoopGroup() : new NioEventLoopGroup())
+
+        bootstrap.group(eventLoop)
             .channel(isLinux() ? EpollSocketChannel.class : NioSocketChannel.class)
             .handler(new ClientHandlerInitializer(serverResponseListener))
             .remoteAddress(targetAddress)
@@ -47,7 +54,19 @@ public class ClientChannelImpl implements ClientChannel {
 
     @Override
     public ClientChannel shutdown() {
-        return null;
+        if (networkChannel.isOpen()) {
+            networkChannel.close().addListener(future -> {
+                if (!future.isSuccess()) {
+                    log.warn("Error during server channel shutdown '{}'", future.cause());
+                }
+                eventLoop.shutdownGracefully().addListener(result -> {
+                    if (!result.isSuccess()) {
+                        log.warn("Error during server event loop shutdown '{}'", result.cause());
+                    }
+                });
+            });
+        }
+        return this;
     }
 
     @Override

@@ -23,12 +23,14 @@
         <maven-checkstyle-plugin.version>3.0.0</maven-checkstyle-plugin.version>
         <findbugs-maven-plugin.version>3.0.5</findbugs-maven-plugin.version>
         <maven-enforcer-plugin.version>3.0.0-M1</maven-enforcer-plugin.version>
+        <maven-compiler-plugin.version>3.7.0</maven-compiler-plugin.version>
     </properties>
 
     <modules>
         <module>jrpc-common</module>
         <module>jrpc-maven-plugin</module>
         <module>jrpc-core</module>
+        <module>jrpc-example</module>
     </modules>
 
     <dependencies>
@@ -55,6 +57,11 @@
 
     <build>
         <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>${maven-compiler-plugin.version}</version>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-enforcer-plugin</artifactId>

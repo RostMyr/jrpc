@@ -15,19 +15,17 @@ import org.objectweb.asm.tree.InsnNode;
 import org.objectweb.asm.tree.IntInsnNode;
 import org.objectweb.asm.tree.LdcInsnNode;
 import org.objectweb.asm.util.CheckClassAdapter;
-import org.objectweb.asm.util.TraceClassVisitor;
 
 import com.github.rostmyr.jrpc.common.annotation.ResourceId;
 
-import java.io.PrintWriter;
 import java.lang.invoke.LambdaMetafactory;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.util.List;
+import java.util.Objects;
 import java.util.function.Supplier;
 
-import static java.util.Arrays.copyOf;
 import static org.objectweb.asm.ClassWriter.COMPUTE_FRAMES;
 import static org.objectweb.asm.Opcodes.*;
 import static org.objectweb.asm.Type.getMethodDescriptor;
@@ -66,7 +64,7 @@ public class ClassTransformer {
     private final byte[] clazz;
 
     public ClassTransformer(byte[] clazz) {
-        this.clazz = copyOf(clazz, clazz.length);
+        this.clazz = clazz;
     }
 
     /**
@@ -88,7 +86,7 @@ public class ClassTransformer {
     private class MyClassAdapter extends ClassNode {
         MyClassAdapter(ClassVisitor classVisitor) {
             super(ASM6);
-            this.cv = new CheckClassAdapter(new TraceClassVisitor(classVisitor, new PrintWriter(System.out)));
+            this.cv = new CheckClassAdapter((classVisitor));
         }
 
         @Override
@@ -147,10 +145,16 @@ public class ClassTransformer {
 
         private void appendDefaultConstructor() {
             if (!hasDefaultConstructor()) {
+
+
                 MethodVisitor mv = visitMethod(ACC_PUBLIC, CTR_NAME, CTR_DESC, null, null);
                 mv.visitCode();
                 mv.visitVarInsn(ALOAD, 0); // this
-                mv.visitMethodInsn(INVOKESPECIAL, Type.getType(Object.class).getInternalName(), CTR_NAME, CTR_DESC, false);
+                if (Objects.equals(superName, Type.getInternalName(Object.class))) {
+                    mv.visitMethodInsn(INVOKESPECIAL, Type.getInternalName(Object.class), CTR_NAME, CTR_DESC, false);
+                } else {
+                    mv.visitMethodInsn(INVOKESPECIAL, superName, CTR_NAME, CTR_DESC, false);
+                }
                 mv.visitInsn(RETURN);
                 mv.visitMaxs(1, 1);
                 mv.visitEnd();

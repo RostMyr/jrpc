@@ -3,7 +3,6 @@ package com.github.rostmyr.jrpc.core.server;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
-import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.MultithreadEventLoopGroup;
 import io.netty.channel.epoll.EpollEventLoopGroup;
 import io.netty.channel.epoll.EpollServerSocketChannel;
@@ -39,6 +38,7 @@ class NettyTransportServer implements TransportServer {
     private final ResourceRegistry resourceRegistry = new MutableResourceRegistry();
 
     private final boolean isLinux = SystemUtils.isLinux();
+    private final MultithreadEventLoopGroup eventLoopGroup = isLinux ? new EpollEventLoopGroup() : new NioEventLoopGroup();
 
     private TransportServerListener listener;
     private Channel channel;
@@ -57,7 +57,6 @@ class NettyTransportServer implements TransportServer {
     public void start(TransportServerListener listener) throws ServerBindException {
         this.listener = Contract.checkNotNull(listener, "listener can't be null");
 
-        MultithreadEventLoopGroup eventLoopGroup = isLinux ? new EpollEventLoopGroup() : new NioEventLoopGroup();
         TransportServerChannelInitializer channelInitializer = new TransportServerChannelInitializer(
             serviceDefinitions, new ImmutableResourceRegistry(resourceRegistry)
         );
@@ -86,11 +85,16 @@ class NettyTransportServer implements TransportServer {
         if (channel == null || !channel.isOpen()) {
             return;
         }
-        channel.close().addListener((ChannelFutureListener) future -> {
+        channel.close().addListener(future -> {
             if (!future.isSuccess()) {
-                log.warn("Error during server shutdown '{}'", future.cause());
+                log.warn("Error during server channel shutdown '{}'", future.cause());
             }
-            listener.onShutdown();
+            eventLoopGroup.shutdownGracefully().addListener(result -> {
+                if (!result.isSuccess()) {
+                    log.warn("Error during server event loop shutdown '{}'", result.cause());
+                }
+                listener.onShutdown();
+            });
         });
     }
 
