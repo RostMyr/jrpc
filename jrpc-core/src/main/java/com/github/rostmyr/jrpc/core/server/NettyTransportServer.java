@@ -11,14 +11,16 @@ import io.netty.channel.socket.nio.NioServerSocketChannel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.github.rostmyr.jrpc.common.io.Resource;
 import com.github.rostmyr.jrpc.common.utils.Contract;
+import com.github.rostmyr.jrpc.common.utils.ResourceUtils;
 import com.github.rostmyr.jrpc.common.utils.SystemUtils;
 import com.github.rostmyr.jrpc.core.exception.ServerBindException;
 import com.github.rostmyr.jrpc.core.server.handler.TransportServerChannelInitializer;
 import com.github.rostmyr.jrpc.core.server.registry.ImmutableResourceRegistry;
 import com.github.rostmyr.jrpc.core.server.registry.MutableResourceRegistry;
 import com.github.rostmyr.jrpc.core.server.registry.ResourceRegistry;
-import com.github.rostmyr.jrpc.core.service.MethodDefinition;
+import com.github.rostmyr.jrpc.core.service.ResponseType;
 import com.github.rostmyr.jrpc.core.service.ServerServiceDefinition;
 
 import java.net.InetSocketAddress;
@@ -47,11 +49,18 @@ class NettyTransportServer implements TransportServer {
         this.address = address;
         this.serviceDefinitions = unmodifiableList(serviceDefinitions);
 
-        for (ServerServiceDefinition serviceDefinition : this.serviceDefinitions) {
-            for (MethodDefinition methodDefinition : serviceDefinition.getMethods()) {
-                resourceRegistry.add(methodDefinition.getInputResourceId(), methodDefinition.getInputType());
-            }
-        }
+        this.serviceDefinitions.stream()
+            .flatMap(serviceDefinition -> serviceDefinition.getMethods().stream())
+            .forEach(methodDefinition -> {
+                List<ResponseType> inputTypes = methodDefinition.getInputTypes();
+                Class<?>[] parameterTypes = methodDefinition.getMethod().getParameterTypes();
+                for (int i = 0; i < inputTypes.size(); i++) {
+                    if (ResponseType.RESOURCE == inputTypes.get(i)) {
+                        Class<? extends Resource> clazz = (Class<? extends Resource>) parameterTypes[i];
+                        resourceRegistry.add(ResourceUtils.getResourceId(clazz), clazz);
+                    }
+                }
+            });
     }
 
     public void start(TransportServerListener listener) throws ServerBindException {

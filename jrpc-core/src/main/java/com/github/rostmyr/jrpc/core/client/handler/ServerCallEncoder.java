@@ -4,11 +4,12 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.MessageToByteEncoder;
 
-import com.github.rostmyr.jrpc.common.io.Resource;
 import com.github.rostmyr.jrpc.core.client.ServerCall;
 import com.github.rostmyr.jrpc.core.server.handler.TransportServerDecoder;
+import com.github.rostmyr.jrpc.core.service.ResponseType;
 
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 /**
  * Rostyslav Myroshnychenko
@@ -18,10 +19,8 @@ public class ServerCallEncoder extends MessageToByteEncoder<ServerCall> {
 
     @Override
     protected void encode(ChannelHandlerContext ctx, ServerCall serverCall, ByteBuf out) {
-        Resource resource = serverCall.getResource();
-
-        writeHeader(serverCall, out, resource);
-        writeBody(out, resource);
+        writeHeader(serverCall, out);
+        writeBody(serverCall, out);
         writeLength(out);
     }
 
@@ -29,16 +28,19 @@ public class ServerCallEncoder extends MessageToByteEncoder<ServerCall> {
         out.setShort(0, out.writerIndex());
     }
 
-    private void writeHeader(ServerCall serverCall, ByteBuf out, Resource resource) {
+    private void writeHeader(ServerCall serverCall, ByteBuf out) {
         out.writerIndex(TransportServerDecoder.LENGTH_HEADER_SIZE);
         out.writeInt(serverCall.getId());
         out.writeByte(serverCall.getMethodId());
-        out.writeShort(resource.getResourceId());
         out.writeByte(serverCall.getAddress().length());
         out.writeCharSequence(serverCall.getAddress(), StandardCharsets.UTF_8);
     }
 
-    private void writeBody(ByteBuf out, Resource resource) {
-        resource.write(out);
+    private void writeBody(ServerCall serverCall, ByteBuf out) {
+        List<ResponseType> inputTypes = serverCall.getInputTypes();
+        Object[] args = serverCall.getArgs();
+        for (int i = 0; i < args.length; i++) {
+            inputTypes.get(i).write(out, args[i]);
+        }
     }
 }

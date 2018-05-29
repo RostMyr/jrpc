@@ -10,4 +10,6 @@ public interface ServiceExample {
     String sayHello(GreetingResource greeting);
 
     UserInfoResource getUserInfo(GetUserResource getUserResource);
+
+    double sum(double a, double b);
 }

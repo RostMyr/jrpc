@@ -1,8 +1,9 @@
 package com.github.rostmyr.jrpc.core.client;
 
-import com.github.rostmyr.jrpc.common.io.Resource;
+import com.github.rostmyr.jrpc.core.service.MethodDefinition;
 import com.github.rostmyr.jrpc.core.service.ResponseType;
 
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -13,16 +14,18 @@ public class ServerCall {
     private static final AtomicInteger ID = new AtomicInteger();
 
     private final int id;
-    private final Resource resource;
+    private final Object[] args;
+    private final List<ResponseType> inputTypes;
     private final String address;
-    private final int methodId;
+    private final MethodDefinition methodDefinition;
     private final ResponseType responseType;
 
-    public ServerCall(Resource resource, String address, int methodId, Class<?> responseType) {
+    public ServerCall(Object[] args, String address, MethodDefinition methodDefinition, Class<?> responseType) {
         this.id = ID.getAndIncrement();
-        this.resource = resource;
+        this.args = args;
+        this.inputTypes = methodDefinition.getInputTypes();
         this.address = address;
-        this.methodId = methodId;
+        this.methodDefinition = methodDefinition;
         this.responseType = ResponseType.of(responseType);
     }
 
@@ -35,11 +38,15 @@ public class ServerCall {
     }
 
     public int getMethodId() {
-        return methodId;
+        return methodDefinition.getMethodId();
     }
 
-    public Resource getResource() {
-        return resource;
+    public Object[] getArgs() {
+        return args;
+    }
+
+    public List<ResponseType> getInputTypes() {
+        return inputTypes;
     }
 
     public boolean isVoid() {

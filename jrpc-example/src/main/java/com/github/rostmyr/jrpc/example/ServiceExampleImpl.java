@@ -20,4 +20,9 @@ public class ServiceExampleImpl implements ServiceExample {
     public UserInfoResource getUserInfo(GetUserResource getUserResource) {
         return new UserInfoResource("Ivan", "Ivanov");
     }
+
+    @Override
+    public double sum(double a, double b) {
+        return a + b;
+    }
 }

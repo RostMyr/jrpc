@@ -5,7 +5,6 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.ByteToMessageDecoder;
 import io.netty.handler.codec.TooLongFrameException;
 
-import com.github.rostmyr.jrpc.common.io.Resource;
 import com.github.rostmyr.jrpc.common.utils.Contract;
 import com.github.rostmyr.jrpc.core.server.registry.ResourceRegistry;
 import com.github.rostmyr.jrpc.core.service.MethodDefinition;
@@ -22,14 +21,9 @@ public class TransportServerDecoder extends ByteToMessageDecoder {
     public static final int LENGTH_HEADER_SIZE = 2;
     public static final int REQUEST_ID_SIZE = 4;
 
-    private static final int RESOURCE_ID_SIZE = 2;
     private static final int METHOD_ID_SIZE = 1;
     private static final int ADDRESS_SIZE = 1;
-    private static final int TOTAL_HEADER_SIZE = REQUEST_ID_SIZE
-        + LENGTH_HEADER_SIZE
-        + RESOURCE_ID_SIZE
-        + METHOD_ID_SIZE
-        + ADDRESS_SIZE;
+    private static final int TOTAL_HEADER_SIZE = REQUEST_ID_SIZE + LENGTH_HEADER_SIZE + METHOD_ID_SIZE + ADDRESS_SIZE;
 
     private final ResourceRegistry resourceRegistry;
     private final Map<String, ServerServiceDefinition> definitionsByAddress;
@@ -57,19 +51,22 @@ public class TransportServerDecoder extends ByteToMessageDecoder {
 
         int requestId = in.readInt();
         short methodId = in.readUnsignedByte();
-        int resourceId = in.readUnsignedShort();
         String address = (String) in.readCharSequence(in.readUnsignedByte(), StandardCharsets.UTF_8);
-
-        Resource resource = resourceRegistry.get(resourceId);
-        resource.read(in);
 
         ServerServiceDefinition serviceDefinition = definitionsByAddress.get(address);
         Contract.checkArg(serviceDefinition, "There is no service definition for address: " + address);
 
         MethodDefinition method = serviceDefinition.getMethod(methodId);
 
+        List<ResponseType> inputTypes = method.getInputTypes();
+        Object[] args = new Object[inputTypes.size() + 1];
+        args[0] = serviceDefinition.getService();
+        for (int i = 1; i < args.length; i++) {
+            args[i] = inputTypes.get(i - 1).read(in, resourceRegistry);
+        }
+
         // TODO move call to the separate thread
-        Object response = method.invoke(serviceDefinition.getService(), resource);
+        Object response = method.invoke(args);
         ResponseType responseType = response == null ? ResponseType.NULL : method.getResponseType();
 
         ctx.writeAndFlush(new TransportServerEncoder.ResponseMessage(requestId, response, responseType));

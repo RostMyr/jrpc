@@ -36,6 +36,9 @@ public class Application {
         UserInfoResource userInfo = serviceExample.getUserInfo(new GetUserResource(1));
         System.out.println("User info: " + userInfo);
 
+        double sum = serviceExample.sum(2.0, 2.1);
+        System.out.println("Sum of 2.0 + 2.1 is : " + sum);
+
         // stop the client
         clientChannel.shutdown();
         clientChannel.awaitTermination();

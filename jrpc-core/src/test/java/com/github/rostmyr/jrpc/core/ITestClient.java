@@ -82,7 +82,7 @@ public class ITestClient {
 
         System.out.println("Executed in '" + TimeUnit.NANOSECONDS.toMillis(passed) + " ' ms");
 
-        assertThat(result).isGreaterThan(1);
+        assertThat(result).isEqualTo(1_000_000 * 5);
     }
     //Executed in '32850 ' ms
 

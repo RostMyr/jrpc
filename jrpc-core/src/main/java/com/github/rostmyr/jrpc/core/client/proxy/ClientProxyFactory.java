@@ -12,10 +12,8 @@ import com.github.rostmyr.jrpc.core.service.reader.MethodDefinitionReader;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
-import java.util.List;
+import java.util.HashMap;
 import java.util.Map;
-
-import static java.util.stream.Collectors.toMap;
 
 /**
  * Rostyslav Myroshnychenko
@@ -30,23 +28,22 @@ public class ClientProxyFactory {
         Contract.checkArg(clazz.isInterface(), "You must provide an interface to create a proxy");
         Contract.checkNotNull(channel, "Channel can't be null");
 
-        List<MethodDefinition> methodDefinitions = reader.read(clazz);
-        for (MethodDefinition methodDefinition : methodDefinitions) {
-            if (methodDefinition.getResponseType() == ResponseType.RESOURCE) {
+        Map<Method, MethodDefinition> methodDefinitionsByMethods = new HashMap<>();
+        for (MethodDefinition methodDefinition : reader.read(clazz)) {
+            ResponseType responseType = methodDefinition.getResponseType();
+            if (responseType == ResponseType.RESOURCE) {
                 resourceRegistry.add(
                     methodDefinition.getResponseResourceId(),
                     (Class<? extends Resource>) methodDefinition.getMethod().getReturnType()
                 );
             }
+            methodDefinitionsByMethods.put(methodDefinition.getMethod(), methodDefinition);
         }
-
-        Map<Method, Integer> methodsIdByMethod = methodDefinitions.stream()
-            .collect(toMap(MethodDefinition::getMethod, MethodDefinition::getMethodId));
 
         return clazz.cast(Proxy.newProxyInstance(
             clazz.getClassLoader(),
             new Class[]{clazz},
-            new ProxyInvocationHandler(clazz, channel, methodsIdByMethod)
+            new ProxyInvocationHandler(clazz, channel, methodDefinitionsByMethods)
         ));
     }
 
