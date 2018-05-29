@@ -38,6 +38,7 @@ public class Application {
 
         // stop the client
         clientChannel.shutdown();
+        clientChannel.awaitTermination();
 
         // stop the server
         server.shutdown();

@@ -20,6 +20,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import static com.github.rostmyr.jrpc.common.utils.SystemUtils.isLinux;
+import static java.util.concurrent.TimeUnit.NANOSECONDS;
 
 /**
  * Rostyslav Myroshnychenko
@@ -33,6 +34,11 @@ public class ClientChannelImpl implements ClientChannel {
     private final ServerResponseListener serverResponseListener;
     private final EventLoopGroup eventLoop = isLinux() ? new EpollEventLoopGroup() : new NioEventLoopGroup();
     private final ClientProxyFactory clientProxyFactory;
+
+    private final Object lock = new Object();
+    private boolean isShutdown;
+    private boolean isTerminated;
+    private boolean isStarted;
 
     public ClientChannelImpl(InetSocketAddress targetAddress) {
         this.targetAddress = targetAddress;
@@ -54,22 +60,37 @@ public class ClientChannelImpl implements ClientChannel {
             Thread.currentThread().interrupt();
             throw new RuntimeException(e);
         }
+        isStarted = true;
     }
 
     @Override
     public ClientChannel shutdown() {
         if (networkChannel.isOpen()) {
-            networkChannel.close().addListener(future -> {
-                if (!future.isSuccess()) {
-                    log.warn("Error during server channel shutdown '{}'", future.cause());
+            boolean shutdownClient;
+            synchronized (lock) {
+                if (isShutdown) {
+                    return this;
                 }
-                serverResponseListener.destroy();
-                eventLoop.shutdownGracefully().addListener(result -> {
-                    if (!result.isSuccess()) {
-                        log.warn("Error during server event loop shutdown '{}'", result.cause());
+                isShutdown = true;
+                shutdownClient = isStarted;
+            }
+            if (shutdownClient) {
+                networkChannel.close().addListener(future -> {
+                    if (!future.isSuccess()) {
+                        log.warn("Error during client channel shutdown '{}'", future.cause());
                     }
+                    serverResponseListener.destroy();
+                    eventLoop.shutdownGracefully().addListener(result -> {
+                        if (!result.isSuccess()) {
+                            log.warn("Error during client event loop shutdown '{}'", result.cause());
+                        }
+                        synchronized (lock) {
+                            isTerminated = true;
+                            lock.notifyAll();
+                        }
+                    });
                 });
-            });
+            }
         }
         return this;
     }
@@ -96,17 +117,37 @@ public class ClientChannelImpl implements ClientChannel {
 
     @Override
     public boolean isShutdown() {
-        return false;
+        synchronized (lock) {
+            return isShutdown;
+        }
     }
 
     @Override
     public boolean isTerminated() {
-        return false;
+        synchronized (lock) {
+            return isTerminated;
+        }
     }
 
     @Override
     public boolean awaitTermination(long timeout, TimeUnit unit) throws InterruptedException {
-        return false;
+        synchronized (lock) {
+            long timeoutNanos = unit.toNanos(timeout);
+            long endTimeNanos = System.nanoTime() + timeoutNanos;
+            while (!isTerminated && (timeoutNanos = endTimeNanos - System.nanoTime()) > 0) {
+                NANOSECONDS.timedWait(lock, timeoutNanos);
+            }
+            return isTerminated;
+        }
+    }
+
+    @Override
+    public void awaitTermination() throws InterruptedException {
+        synchronized (lock) {
+            while (!isTerminated) {
+                lock.wait();
+            }
+        }
     }
 
     @Override

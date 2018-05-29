@@ -49,5 +49,10 @@ public interface ClientChannel {
      */
     boolean awaitTermination(long timeout, TimeUnit unit) throws InterruptedException;
 
+    /**
+     * Waits for the channel to become terminated
+     */
+    void awaitTermination() throws InterruptedException;
+
     <T> T createProxy(Class<T> clazz);
 }
