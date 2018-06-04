@@ -1,7 +1,7 @@
 package com.github.rostmyr.jrpc.common.utils;
 
 import com.github.rostmyr.jrpc.common.annotation.ResourceId;
-import com.github.rostmyr.jrpc.common.bytecode.ClassTransformer;
+import com.github.rostmyr.jrpc.common.bytecode.ResourceClassTransformer;
 import com.github.rostmyr.jrpc.common.io.Resource;
 
 import java.lang.reflect.Field;
@@ -29,7 +29,7 @@ public final class ResourceUtils {
      */
     public static int getResourceId(Class<? extends Resource> resource) {
         try {
-            Field field = resource.getField(ClassTransformer.RESOURCE_ID_FIELD);
+            Field field = resource.getField(ResourceClassTransformer.RESOURCE_ID_FIELD);
             return field.getInt(null); // static
         } catch (NoSuchFieldException e) {
             throw new IllegalArgumentException(
@@ -50,7 +50,7 @@ public final class ResourceUtils {
     @SuppressWarnings("unchecked")
     public static <T extends Resource> Supplier<T> getResourceSupplier(Class<T> resource) {
         try {
-            Method method = resource.getMethod(ClassTransformer.RESOURCE_ID_SUPPLIER, null);
+            Method method = resource.getMethod(ResourceClassTransformer.RESOURCE_ID_SUPPLIER, null);
             return (Supplier<T>) method.invoke(null);
         } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
             throw new IllegalArgumentException(

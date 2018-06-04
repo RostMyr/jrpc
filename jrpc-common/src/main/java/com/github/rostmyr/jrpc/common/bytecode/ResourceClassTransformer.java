@@ -34,7 +34,7 @@ import static org.objectweb.asm.Type.getMethodDescriptor;
  * Rostyslav Myroshnychenko
  * on 26.05.2018.
  */
-public class ClassTransformer {
+public class ResourceClassTransformer {
 
     // constructor
     private static final String CTR_NAME = "<init>";
@@ -63,7 +63,7 @@ public class ClassTransformer {
 
     private final byte[] clazz;
 
-    public ClassTransformer(byte[] clazz) {
+    public ResourceClassTransformer(byte[] clazz) {
         this.clazz = clazz;
     }
 

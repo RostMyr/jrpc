@@ -7,7 +7,8 @@ import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.plugins.annotations.ResolutionScope;
 import org.apache.maven.project.MavenProject;
 
-import com.github.rostmyr.jrpc.common.bytecode.ResourceClassTransformer;
+import com.github.rostmyr.jrpc.fibers.bytecode.FiberTransformer;
+import com.github.rostmyr.jrpc.fibers.bytecode.FiberTransformerResult;
 
 import java.io.IOException;
 import java.nio.file.FileVisitOption;
@@ -15,22 +16,24 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
+import java.util.Map;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
 
 import static java.nio.file.Files.isRegularFile;
+import static java.nio.file.Files.readAllBytes;
 
 /**
  * Rostyslav Myroshnychenko
- * on 25.05.2018.
+ * on 02.06.2018.
  */
 @Mojo(
-    name = "process-source-files",
+    name = "process-fiber-files",
     threadSafe = true,
     defaultPhase = LifecyclePhase.PROCESS_CLASSES,
     requiresDependencyResolution = ResolutionScope.TEST
 )
-public class ProcessSourcesMojo extends AbstractMojo {
+public class FiberSourceMogo extends AbstractMojo {
 
     @Parameter(defaultValue = "${project}", readonly = true, required = true)
     private MavenProject project;
@@ -63,13 +66,17 @@ public class ProcessSourcesMojo extends AbstractMojo {
     private Consumer<Path> processCompiledClasses() {
         return path -> {
             try {
-                byte[] clazz = Files.readAllBytes(path);
-                byte[] transformed = new ResourceClassTransformer(clazz).transform();
-                if (transformed != clazz) {
-                    Files.write(path, transformed, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+                FiberTransformerResult result = new FiberTransformer(readAllBytes(path), false).instrument();
+                if (result.getMainClass() == null) {
+                    return;
                 }
-            } catch (IOException e) {
-                getLog().error("Error during reading the file: " + path, e);
+
+                for (Map.Entry<String, byte[]> fiber : result.getFibers().entrySet()) {
+                    Files.write(path.resolveSibling(fiber.getKey() + ".class"), fiber.getValue());
+                }
+                Files.write(path, result.getMainClass(), StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+            } catch (Exception e) {
+                getLog().error("Error during processing the file: " + path, e);
             }
         };
     }

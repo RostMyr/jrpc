@@ -1,4 +1,4 @@
-package com.github.rostmyr.jrpc.example;
+package com.github.rostmyr.jrpc.example.rpc;
 
 /**
  * Rostyslav Myroshnychenko

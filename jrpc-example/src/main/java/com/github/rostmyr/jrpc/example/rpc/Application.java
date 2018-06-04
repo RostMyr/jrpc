@@ -1,4 +1,4 @@
-package com.github.rostmyr.jrpc.example;
+package com.github.rostmyr.jrpc.example.rpc;
 
 import com.github.rostmyr.jrpc.core.client.ClientBuilder;
 import com.github.rostmyr.jrpc.core.client.ClientChannel;
