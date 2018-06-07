@@ -38,6 +38,7 @@ public class FiberManager {
                     current = current.next;
                     last.next = null;
                 } else {
+                    current.scheduler = null;
                     System.out.println("Result " + current + " " + current.getResult());
                     size--;
                     current = current.next;

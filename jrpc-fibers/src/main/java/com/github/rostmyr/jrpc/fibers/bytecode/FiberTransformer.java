@@ -1,42 +1,16 @@
 package com.github.rostmyr.jrpc.fibers.bytecode;
 
-import org.objectweb.asm.ClassReader;
-import org.objectweb.asm.ClassVisitor;
-import org.objectweb.asm.ClassWriter;
-import org.objectweb.asm.Label;
-import org.objectweb.asm.MethodVisitor;
-import org.objectweb.asm.Opcodes;
-import org.objectweb.asm.Type;
-import org.objectweb.asm.tree.AbstractInsnNode;
-import org.objectweb.asm.tree.ClassNode;
-import org.objectweb.asm.tree.FieldInsnNode;
-import org.objectweb.asm.tree.InsnList;
-import org.objectweb.asm.tree.InsnNode;
-import org.objectweb.asm.tree.IntInsnNode;
-import org.objectweb.asm.tree.JumpInsnNode;
-import org.objectweb.asm.tree.LabelNode;
-import org.objectweb.asm.tree.LdcInsnNode;
-import org.objectweb.asm.tree.LocalVariableNode;
-import org.objectweb.asm.tree.MethodInsnNode;
-import org.objectweb.asm.tree.MethodNode;
-import org.objectweb.asm.tree.TypeInsnNode;
-import org.objectweb.asm.tree.VarInsnNode;
-import org.objectweb.asm.util.CheckClassAdapter;
-import org.objectweb.asm.util.TraceClassVisitor;
-
 import com.github.rostmyr.jrpc.common.utils.Contract;
 import com.github.rostmyr.jrpc.fibers.Fiber;
 import com.github.rostmyr.jrpc.fibers.FiberManager;
+import org.objectweb.asm.*;
+import org.objectweb.asm.tree.*;
+import org.objectweb.asm.util.CheckClassAdapter;
+import org.objectweb.asm.util.TraceClassVisitor;
 
 import java.io.IOException;
 import java.io.PrintWriter;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.ListIterator;
-import java.util.Map;
+import java.util.*;
 
 import static java.util.stream.Collectors.toList;
 import static org.objectweb.asm.ClassReader.SKIP_FRAMES;
@@ -138,7 +112,13 @@ public class FiberTransformer {
 
                 methods.remove(m);
 
-                MethodVisitor mv = visitMethod(m.access, m.name, m.desc, m.signature, m.exceptions.toArray(new String[0]));
+                MethodVisitor mv = visitMethod(
+                    m.access,
+                    m.name,
+                    m.desc,
+                    m.signature,
+                    m.exceptions.toArray(new String[0])
+                );
                 mv.visitCode();
                 mv.visitTypeInsn(NEW, innerClassName);
                 mv.visitInsn(DUP);
@@ -264,7 +244,12 @@ public class FiberTransformer {
 
                         instNodes.add(new VarInsnNode(ALOAD, 0));
                         instNodes.add(
-                            new FieldInsnNode(GETFIELD, innerClassName, "scheduler", "L" + FIBER_MANAGER_CLASS_NAME + ";"));
+                            new FieldInsnNode(
+                                GETFIELD,
+                                innerClassName,
+                                "scheduler",
+                                "L" + FIBER_MANAGER_CLASS_NAME + ";"
+                            ));
                         instNodes.add(new VarInsnNode(ALOAD, 0));
                         instNodes.add(new FieldInsnNode(GETFIELD, innerClassName, "result", "Ljava/lang/Object;"));
                         instNodes.add(new TypeInsnNode(CHECKCAST, FIBER_CLASS_NAME));
@@ -291,7 +276,13 @@ public class FiberTransformer {
                         instNodes.add(new FieldInsnNode(GETFIELD, innerClassName, "result", "Ljava/lang/Object;"));
                         instNodes.add(new TypeInsnNode(CHECKCAST, FIBER_CLASS_NAME));
                         instNodes.add(
-                            new MethodInsnNode(INVOKEVIRTUAL, FIBER_CLASS_NAME, "getResult", "()Ljava/lang/Object;", false));
+                            new MethodInsnNode(
+                                INVOKEVIRTUAL,
+                                FIBER_CLASS_NAME,
+                                "getResult",
+                                "()Ljava/lang/Object;",
+                                false
+                            ));
                         instNodes.add(new TypeInsnNode(CHECKCAST, varDesc));
                         Contract.checkNotNull(field, "Missing field assignment");
                         instNodes.add(new FieldInsnNode(PUTFIELD, innerClassName, field.name, field.desc));
@@ -384,12 +375,29 @@ public class FiberTransformer {
             mv.visitMethodInsn(INVOKESPECIAL, "java/lang/StringBuilder", "<init>", "()V", false);
             mv.visitLdcInsn("Unknown state: ");
             mv.visitMethodInsn(
-                INVOKEVIRTUAL, "java/lang/StringBuilder", "append", "(Ljava/lang/String;)Ljava/lang/StringBuilder;", false);
+                INVOKEVIRTUAL,
+                "java/lang/StringBuilder",
+                "append",
+                "(Ljava/lang/String;)Ljava/lang/StringBuilder;",
+                false
+            );
             mv.visitVarInsn(ALOAD, 0);
             mv.visitFieldInsn(GETFIELD, innerClassName, "state", "I");
-            mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/StringBuilder", "append", "(I)Ljava/lang/StringBuilder;", false);
+            mv.visitMethodInsn(
+                INVOKEVIRTUAL,
+                "java/lang/StringBuilder",
+                "append",
+                "(I)Ljava/lang/StringBuilder;",
+                false
+            );
             mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/StringBuilder", "toString", "()Ljava/lang/String;", false);
-            mv.visitMethodInsn(INVOKESPECIAL, "java/lang/IllegalStateException", "<init>", "(Ljava/lang/String;)V", false);
+            mv.visitMethodInsn(
+                INVOKESPECIAL,
+                "java/lang/IllegalStateException",
+                "<init>",
+                "(Ljava/lang/String;)V",
+                false
+            );
             mv.visitInsn(ATHROW);
             mv.visitMaxs(0, 0);
             mv.visitEnd();

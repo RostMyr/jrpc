@@ -1,6 +1,5 @@
 package com.github.rostmyr.jrpc.fibers;
 
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 
 import static com.github.rostmyr.jrpc.fibers.Fiber.call;
@@ -56,6 +55,10 @@ public class TestFiberModel {
         return "Hello";
     }
 
+    private Future<String> getFuture(String string) {
+        return null;
+    }
+
 
 //    public Fiber<Integer> loop() {
 //        int sum = 0;
@@ -65,39 +68,53 @@ public class TestFiberModel {
 //        return result(sum);
 //    }
 
-    public class MyFiber extends Fiber<String> {
-        private String first;
-        private String second;
-
-        public MyFiber(String second) {
-            this.second = second;
-        }
-
-        private Future<String> getFuture(String A) {
-            return null;
-        }
+    public class FiberWithVoidResult extends Fiber<Void> {
 
         @Override
         public int update() {
             switch (state) {
                 case 0: {
-                    this.result = getFuture("A");
                     return 1;
                 }
                 case 1: {
-                    Future<String> future = (Future<String>) this.result;
-                    if (!future.isDone()) {
-                        return 1;
-                    }
-                    try {
-                        this.first = future.get();
-                    } catch (InterruptedException | ExecutionException e) {
-                        throw new RuntimeException(e);
-                    }
-                    return 2;
+                    return nothingInternal();
                 }
-                case 2: {
-                    this.result = join(first, second);
+                default: {
+                    throw new IllegalStateException("Unknown state: " + state);
+                }
+            }
+        }
+    }
+
+    public class CallAnotherFiber extends Fiber<String> {
+
+        @Override
+        public int update() {
+            switch (state) {
+                case 0: {
+                    return callInternal(fiberWithSeveralCalls());
+                }
+                case 1: {
+                    this.result = join((String) this.result, "B");
+                    return -1;
+                }
+                default: {
+                    throw new IllegalStateException("Unknown state: " + state);
+                }
+            }
+        }
+    }
+
+    public class CallFuture extends Fiber<String> {
+
+        @Override
+        public int update() {
+            switch (state) {
+                case 0: {
+                    return callInternal(getFuture("A"));
+                }
+                case 1: {
+                    this.result = join((String) this.result, "B");
                     return -1;
                 }
                 default: {
