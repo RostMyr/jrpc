@@ -12,10 +12,20 @@ public abstract class Fiber<E> {
     protected Throwable exception;
     protected int state;
     protected Fiber<?> next;
+
+    // the current fiber we are waiting for
+    protected Fiber current;
     protected FiberManager scheduler;
 
     public void setState(int state) {
         this.state = state;
+    }
+
+    public void awaitFor(Fiber fiber) {
+        this.current = fiber;
+        if (current.scheduler == null) {
+            scheduler.schedule(current);
+        }
     }
 
     public E getResult() {
@@ -41,23 +51,20 @@ public abstract class Fiber<E> {
     /**
      * Should be called by {@link #call(Fiber)}}
      *
-     *
      * case 0:
-     *    return this.call(this, fiber) // returns 0 while fiber.isReady() returns false
+     *    awaitFor(call(fiber))
+     *    return 1
      * case 1:
+     *    return callInternal(); // returns 1 while current.isReady() returns false
+     * case 2:
      *    this.someVariable = this.result;
-     *    return 2;
      * ...
      */
-    protected <T> int callInternal(Fiber<T> callee) {
-        //TODO here we are working with a new instance of fiber!
-        if (!callee.isReady()) {
-            if (callee.scheduler == null) {
-                scheduler.schedule(callee);
-            }
+    protected int callInternal() {
+        if (!current.isReady()) {
             return state;
         }
-        this.result = callee.result;
+        this.result = current.result;
         return state + 1;
     }
 
@@ -109,22 +116,19 @@ public abstract class Fiber<E> {
     /**
      * Should be called by {@link #result(Fiber)}}
      *
-     *
-     * case 0:
-     *    return this.call(this, fiber) // returns 0 while fiber.isDone() returns false
-     * case 1:
-     *    this.someVariable = this.result;
-     *    return 2;
+     * ...
+     * case n:
+     *    awaitFor(call(fiber))
+     *    return n + 1
+     * case n + 1:
+     *    return resultInternal(); // returns n + 1 while current.isReady() returns false
      * ...
      */
-    protected <T> int resultInternal(Fiber<T> callee) {
-        if (!callee.isReady()) {
-            if (callee.scheduler == null) {
-                scheduler.schedule(callee);
-            }
+    protected int resultInternal() {
+        if (!current.isReady()) {
             return state;
         }
-        this.result = callee.result;
+        this.result = current.result;
         return -1;
     }
 

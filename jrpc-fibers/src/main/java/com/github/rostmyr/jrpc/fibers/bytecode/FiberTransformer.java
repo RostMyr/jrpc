@@ -1,42 +1,15 @@
 package com.github.rostmyr.jrpc.fibers.bytecode;
 
-import org.objectweb.asm.ClassReader;
-import org.objectweb.asm.ClassVisitor;
-import org.objectweb.asm.ClassWriter;
-import org.objectweb.asm.Label;
-import org.objectweb.asm.MethodVisitor;
-import org.objectweb.asm.Opcodes;
-import org.objectweb.asm.Type;
-import org.objectweb.asm.tree.AbstractInsnNode;
-import org.objectweb.asm.tree.ClassNode;
-import org.objectweb.asm.tree.FieldInsnNode;
-import org.objectweb.asm.tree.InsnList;
-import org.objectweb.asm.tree.InsnNode;
-import org.objectweb.asm.tree.IntInsnNode;
-import org.objectweb.asm.tree.LabelNode;
-import org.objectweb.asm.tree.LdcInsnNode;
-import org.objectweb.asm.tree.LocalVariableNode;
-import org.objectweb.asm.tree.MethodInsnNode;
-import org.objectweb.asm.tree.MethodNode;
-import org.objectweb.asm.tree.TypeInsnNode;
-import org.objectweb.asm.tree.VarInsnNode;
+import com.github.rostmyr.jrpc.common.utils.Contract;
+import com.github.rostmyr.jrpc.fibers.Fiber;
+import org.objectweb.asm.*;
+import org.objectweb.asm.tree.*;
 import org.objectweb.asm.util.CheckClassAdapter;
 import org.objectweb.asm.util.TraceClassVisitor;
 
-import com.github.rostmyr.jrpc.common.utils.Contract;
-import com.github.rostmyr.jrpc.fibers.Fiber;
-
 import java.io.IOException;
 import java.io.PrintWriter;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.ListIterator;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.Future;
 
 import static java.util.Arrays.asList;
@@ -219,7 +192,7 @@ public class FiberTransformer {
                 if (isJoinPointMethodInvocation(insnNode)) {
                     casesCount++;
                     // if we pass fiber as argument we need to add a new case to wait until it's ready
-                    if (isCallMethodWithNonLiteralArgumentInvocation(insnNode)) {
+                    if (isCallMethodWithFutureArgumentInvocation(insnNode)) {
                         casesCount++;
                     }
                 }
@@ -249,6 +222,7 @@ public class FiberTransformer {
             for (int i = 0, j = 0; i < instructions.size() && j < casesCount; i++) {
                 AbstractInsnNode inst = instructions.get(i);
                 if (isJoinPointMethodInvocation(inst)) {
+                    // nothing or return(Fiber/Future)
                     if (isNonLiteralTerminateMethod(inst)) {
                         List<AbstractInsnNode> instNodes = instByCases.get(j);
                         instNodes.add(getInternalResult(innerClassName, ((MethodInsnNode) inst).desc));
@@ -257,7 +231,8 @@ public class FiberTransformer {
                         j++;
                         continue;
                     }
-                    if (isCallMethodWithNonLiteralArgumentInvocation(inst)) {
+                    // call(Future)
+                    if (isCallMethodWithFutureArgumentInvocation(inst)) {
                         List<AbstractInsnNode> instNodes = instByCases.get(j);
 
                         // replace it with call to internal method
@@ -423,6 +398,16 @@ public class FiberTransformer {
             return false;
         }
 
+        private boolean isResultMethodWithFiberArgInvocation(AbstractInsnNode inst) {
+            MethodInsnNode methodNode = getStaticMethodInvocation(inst);
+            if (methodNode != null) {
+                return "result".equals(methodNode.name)
+                    && FIBER_CLASS_NAME.equals(methodNode.owner)
+                    && getMethodDescriptor(getType(Fiber.class), getType(Fiber.class)).equals(methodNode.owner);
+            }
+            return false;
+        }
+
         private boolean isNonLiteralTerminateMethod(AbstractInsnNode inst) {
             MethodInsnNode methodNode = getStaticMethodInvocation(inst);
             if (methodNode != null && FIBER_CLASS_NAME.equals(methodNode.owner)) {
@@ -438,12 +423,22 @@ public class FiberTransformer {
             return false;
         }
 
-        private boolean isCallMethodWithNonLiteralArgumentInvocation(AbstractInsnNode inst) {
+        private boolean isCallMethodWithFutureArgumentInvocation(AbstractInsnNode inst) {
             MethodInsnNode methodNode = getStaticMethodInvocation(inst);
             if (methodNode != null) {
                 return "call".equals(methodNode.name)
                     && FIBER_CLASS_NAME.equals(methodNode.owner)
-                    && NON_LITERAL_METHODS_DESCRIPTORS.contains(methodNode.desc);
+                    && getMethodDescriptor(getType(Object.class), getType(Future.class)).equals(methodNode.desc);
+            }
+            return false;
+        }
+
+        private boolean isCallMethodWithFiberArgInvocation(AbstractInsnNode inst) {
+            MethodInsnNode methodNode = getStaticMethodInvocation(inst);
+            if (methodNode != null) {
+                return "call".equals(methodNode.name)
+                    && FIBER_CLASS_NAME.equals(methodNode.owner)
+                    && getMethodDescriptor(getType(Object.class), getType(Fiber.class)).equals(methodNode.desc);
             }
             return false;
         }

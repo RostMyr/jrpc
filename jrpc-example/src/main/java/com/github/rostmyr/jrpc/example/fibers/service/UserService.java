@@ -24,21 +24,28 @@ public class UserService {
         return result(idSequence);
     }
 
-//    public class getUser_Fiber extends Fiber<User> {
-//        private long id;
-//
-//        public getUser_Fiber(long var2) {
-//            this.id = var2;
-//        }
-//
-//        public int update() {
-//            switch(this.state) {
-//                case 0:
-//                    this.result = repository.getById(this.id);
-//                    return -1;
-//                default:
-//                    throw new IllegalStateException("Unknown state: " + this.state);
-//            }
-//        }
-//    }
+    public class UserFiberExample extends Fiber<User> {
+        private long id;
+        private String firstName;
+        private String lastName;
+
+        public UserFiberExample(String firstName, String lastName) {
+            this.firstName = firstName;
+            this.lastName = lastName;
+        }
+
+        public int update() {
+            switch(this.state) {
+                case 0:
+                    id = idSequence++;
+                    repository.save(new User(idSequence, firstName, lastName));
+                    return 1;
+                case 1:
+                    result = id;
+                    return -1;
+                default:
+                    throw new IllegalStateException("Unknown state: " + this.state);
+            }
+        }
+    }
 }
