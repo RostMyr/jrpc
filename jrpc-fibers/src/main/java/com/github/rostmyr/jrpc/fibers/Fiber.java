@@ -50,10 +50,11 @@ public abstract class Fiber<E> {
      * ...
      */
     protected <T> int callInternal(Fiber<T> callee) {
-        if (callee.scheduler == null) {
-            scheduler.schedule(callee);
-        }
+        //TODO here we are working with a new instance of fiber!
         if (!callee.isReady()) {
+            if (callee.scheduler == null) {
+                scheduler.schedule(callee);
+            }
             return state;
         }
         this.result = callee.result;
@@ -101,7 +102,7 @@ public abstract class Fiber<E> {
     /**
      * A marker method
      */
-    public static <T, F extends Fiber<T>> T result(F fiber) {
+    public static <T, F extends Fiber<T>> F result(F fiber) {
         return null;
     }
 
@@ -118,6 +119,9 @@ public abstract class Fiber<E> {
      */
     protected <T> int resultInternal(Fiber<T> callee) {
         if (!callee.isReady()) {
+            if (callee.scheduler == null) {
+                scheduler.schedule(callee);
+            }
             return state;
         }
         this.result = callee.result;
@@ -127,7 +131,7 @@ public abstract class Fiber<E> {
     /**
      * A marker method
      */
-    public static <T, F extends Future<T>> T result(F call) {
+    public static <T, F extends Future<T>> Fiber<T> result(F call) {
         return null;
     }
 

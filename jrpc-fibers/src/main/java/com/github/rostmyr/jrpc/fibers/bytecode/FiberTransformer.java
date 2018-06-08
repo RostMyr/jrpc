@@ -1,17 +1,45 @@
 package com.github.rostmyr.jrpc.fibers.bytecode;
 
-import com.github.rostmyr.jrpc.common.utils.Contract;
-import com.github.rostmyr.jrpc.fibers.Fiber;
-import com.github.rostmyr.jrpc.fibers.FiberManager;
-import org.objectweb.asm.*;
-import org.objectweb.asm.tree.*;
+import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.ClassVisitor;
+import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.Label;
+import org.objectweb.asm.MethodVisitor;
+import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.Type;
+import org.objectweb.asm.tree.AbstractInsnNode;
+import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.FieldInsnNode;
+import org.objectweb.asm.tree.InsnList;
+import org.objectweb.asm.tree.InsnNode;
+import org.objectweb.asm.tree.IntInsnNode;
+import org.objectweb.asm.tree.LabelNode;
+import org.objectweb.asm.tree.LdcInsnNode;
+import org.objectweb.asm.tree.LocalVariableNode;
+import org.objectweb.asm.tree.MethodInsnNode;
+import org.objectweb.asm.tree.MethodNode;
+import org.objectweb.asm.tree.TypeInsnNode;
+import org.objectweb.asm.tree.VarInsnNode;
 import org.objectweb.asm.util.CheckClassAdapter;
 import org.objectweb.asm.util.TraceClassVisitor;
 
+import com.github.rostmyr.jrpc.common.utils.Contract;
+import com.github.rostmyr.jrpc.fibers.Fiber;
+
 import java.io.IOException;
 import java.io.PrintWriter;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.ListIterator;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.Future;
 
+import static java.util.Arrays.asList;
 import static java.util.stream.Collectors.toList;
 import static org.objectweb.asm.ClassReader.SKIP_FRAMES;
 import static org.objectweb.asm.ClassWriter.COMPUTE_FRAMES;
@@ -24,13 +52,20 @@ import static org.objectweb.asm.Type.*;
  */
 public class FiberTransformer {
     // join points
-    private static final String POINT_RESULT = "result";
-    private static final String POINT_CALL = "call";
-    private static final String CALL_METHOD_WITH_FIBER_ARG_DESCRIPTOR =
-        getMethodDescriptor(getType(Object.class), getType(Fiber.class));
+    private static final String INTERNAL_METHOD_WITH_FIBER_ARG_DESCRIPTOR =
+        getMethodDescriptor(getType(int.class), getType(Fiber.class));
+    private static final String INTERNAL_METHOD_WITH_FUTURE_ARG_DESCRIPTOR =
+        getMethodDescriptor(getType(int.class), getType(Future.class));
+
+    private static final Set<String> NON_LITERAL_METHODS_DESCRIPTORS = new HashSet<>(asList(
+        getMethodDescriptor(getType(Object.class), getType(Fiber.class)),
+        getMethodDescriptor(getType(Object.class), getType(Future.class))
+    ));
+
+    private static final Set<String> JOIN_POINT_METHODS_NAMES = new HashSet<>(asList("call", "result", "nothing"));
+    private static final Set<String> TERMINATION_METHODS_NAMES = new HashSet<>(asList("result", "nothing"));
 
     private static String FIBER_CLASS_NAME = getInternalName(Fiber.class);
-    private static String FIBER_MANAGER_CLASS_NAME = getInternalName(FiberManager.class);
     private static String FIBER_RETURN_TYPE = getDescriptor(Fiber.class);
 
     private Class<?> clazz;
@@ -78,7 +113,7 @@ public class FiberTransformer {
         public void visitEnd() {
             List<MethodNode> methodsForInstrumentation = methods.stream()
                 .filter(method -> getReturnType(method.desc).getDescriptor().equals(FIBER_RETURN_TYPE))
-                .filter(this::hasResultMethodInvocation)
+                .filter(this::hasTerminateMethodInvocation)
                 .collect(toList());
 
             // generate inner classes
@@ -112,13 +147,7 @@ public class FiberTransformer {
 
                 methods.remove(m);
 
-                MethodVisitor mv = visitMethod(
-                    m.access,
-                    m.name,
-                    m.desc,
-                    m.signature,
-                    m.exceptions.toArray(new String[0])
-                );
+                MethodVisitor mv = visitMethod(m.access, m.name, m.desc, m.signature, m.exceptions.toArray(new String[0]));
                 mv.visitCode();
                 mv.visitTypeInsn(NEW, innerClassName);
                 mv.visitInsn(DUP);
@@ -190,7 +219,7 @@ public class FiberTransformer {
                 if (isJoinPointMethodInvocation(insnNode)) {
                     casesCount++;
                     // if we pass fiber as argument we need to add a new case to wait until it's ready
-                    if (isMethodWithFiberArgumentInvocation(insnNode)) {
+                    if (isCallMethodWithNonLiteralArgumentInvocation(insnNode)) {
                         casesCount++;
                     }
                 }
@@ -220,11 +249,21 @@ public class FiberTransformer {
             for (int i = 0, j = 0; i < instructions.size() && j < casesCount; i++) {
                 AbstractInsnNode inst = instructions.get(i);
                 if (isJoinPointMethodInvocation(inst)) {
-                    if (isMethodWithFiberArgumentInvocation(inst)) {
+                    if (isNonLiteralTerminateMethod(inst)) {
+                        List<AbstractInsnNode> instNodes = instByCases.get(j);
+                        instNodes.add(getInternalResult(innerClassName, ((MethodInsnNode) inst).desc));
+                        instNodes.add(new InsnNode(NOP)); // marker
+                        instNodes.add(new InsnNode(IRETURN));
+                        j++;
+                        continue;
+                    }
+                    if (isCallMethodWithNonLiteralArgumentInvocation(inst)) {
                         List<AbstractInsnNode> instNodes = instByCases.get(j);
 
-                        // store fiber to the result field
-                        instNodes.add(new FieldInsnNode(PUTFIELD, innerClassName, "result", "Ljava/lang/Object;"));
+                        // replace it with call to internal method
+                        instNodes.add(getInternalCall(innerClassName, ((MethodInsnNode) inst).desc));
+                        instNodes.add(new InsnNode(NOP)); // marker
+                        instNodes.add(new InsnNode(IRETURN));
 
                         // skip check cast since we store a var in result field
                         inst = inst.getNext();
@@ -242,47 +281,11 @@ public class FiberTransformer {
                             field = method.localVariables.get(((VarInsnNode) inst).var);
                         }
 
-                        instNodes.add(new VarInsnNode(ALOAD, 0));
-                        instNodes.add(
-                            new FieldInsnNode(
-                                GETFIELD,
-                                innerClassName,
-                                "scheduler",
-                                "L" + FIBER_MANAGER_CLASS_NAME + ";"
-                            ));
-                        instNodes.add(new VarInsnNode(ALOAD, 0));
-                        instNodes.add(new FieldInsnNode(GETFIELD, innerClassName, "result", "Ljava/lang/Object;"));
-                        instNodes.add(new TypeInsnNode(CHECKCAST, FIBER_CLASS_NAME));
-                        instNodes.add(new MethodInsnNode(INVOKEVIRTUAL, FIBER_MANAGER_CLASS_NAME, "schedule",
-                            "(L" + FIBER_CLASS_NAME + ";)V", false
-                        ));
                         j++;
-
                         instNodes = instByCases.get(j);
                         instNodes.add(new VarInsnNode(ALOAD, 0));
-                        instNodes.add(new FieldInsnNode(GETFIELD, innerClassName, "result", "Ljava/lang/Object;"));
-                        instNodes.add(new TypeInsnNode(CHECKCAST, FIBER_CLASS_NAME));
-                        instNodes.add(new MethodInsnNode(INVOKEVIRTUAL, FIBER_CLASS_NAME, "isReady", "()Z", false));
-
-                        LabelNode isReadyLabel = new LabelNode();
-                        instNodes.add(new JumpInsnNode(IFNE, isReadyLabel));
-                        instNodes.add(new InsnNode(getPushInst(j).getOpcode()));
-                        instNodes.add(new InsnNode(NOP)); // marker
-                        instNodes.add(new InsnNode(IRETURN));
-
-                        instNodes.add(isReadyLabel);
-                        instNodes.add(new VarInsnNode(ALOAD, 0));
                         instNodes.add(new VarInsnNode(ALOAD, 0));
                         instNodes.add(new FieldInsnNode(GETFIELD, innerClassName, "result", "Ljava/lang/Object;"));
-                        instNodes.add(new TypeInsnNode(CHECKCAST, FIBER_CLASS_NAME));
-                        instNodes.add(
-                            new MethodInsnNode(
-                                INVOKEVIRTUAL,
-                                FIBER_CLASS_NAME,
-                                "getResult",
-                                "()Ljava/lang/Object;",
-                                false
-                            ));
                         instNodes.add(new TypeInsnNode(CHECKCAST, varDesc));
                         Contract.checkNotNull(field, "Missing field assignment");
                         instNodes.add(new FieldInsnNode(PUTFIELD, innerClassName, field.name, field.desc));
@@ -308,7 +311,8 @@ public class FiberTransformer {
                 LinkedList<AbstractInsnNode> processedNodes = new LinkedList<>();
                 LinkedList<AbstractInsnNode> buffer = new LinkedList<>();
                 for (AbstractInsnNode inst : instNodes) {
-                    if (inst.getOpcode() == INVOKEVIRTUAL && name.equals(((MethodInsnNode) inst).owner)) {
+                    int opcode = inst.getOpcode();
+                    if ((opcode == INVOKEVIRTUAL || opcode == INVOKESPECIAL) && name.equals(((MethodInsnNode) inst).owner)) {
                         for (int j = 0; j < getArgumentTypes(inst).length; j++) {
                             buffer.addFirst(processedNodes.pollLast());
                         }
@@ -316,7 +320,9 @@ public class FiberTransformer {
                         processedNodes.add(new FieldInsnNode(GETFIELD, innerClassName, "this$0", outerClassName));
                         processedNodes.addAll(buffer);
                         buffer.clear();
-                    } else if (inst.getOpcode() >= Opcodes.ILOAD && inst.getOpcode() <= SALOAD) {
+                    } else if (opcode == GETFIELD && ((FieldInsnNode) inst).owner.equals(name)) {
+                        processedNodes.add(new FieldInsnNode(GETFIELD, innerClassName, "this$0", outerClassName));
+                    } else if (opcode >= Opcodes.ILOAD && opcode <= SALOAD) {
                         // load vars from the class fields
                         int fieldIndex = ((VarInsnNode) inst).var;
                         if (fieldIndex > 0) { // not this
@@ -325,7 +331,7 @@ public class FiberTransformer {
                             processedNodes.add(new FieldInsnNode(GETFIELD, innerClassName, field.name, field.desc));
                             continue;
                         }
-                    } else if (inst.getOpcode() >= ISTORE && inst.getOpcode() <= ASTORE) {
+                    } else if (opcode >= ISTORE && opcode <= ASTORE) {
                         // store vars into the class fields
                         LocalVariableNode field = method.localVariables.get(((VarInsnNode) inst).var);
                         processedNodes.add(new FieldInsnNode(PUTFIELD, innerClassName, field.name, field.desc));
@@ -375,38 +381,26 @@ public class FiberTransformer {
             mv.visitMethodInsn(INVOKESPECIAL, "java/lang/StringBuilder", "<init>", "()V", false);
             mv.visitLdcInsn("Unknown state: ");
             mv.visitMethodInsn(
-                INVOKEVIRTUAL,
-                "java/lang/StringBuilder",
-                "append",
-                "(Ljava/lang/String;)Ljava/lang/StringBuilder;",
-                false
+                INVOKEVIRTUAL, "java/lang/StringBuilder", "append", "(Ljava/lang/String;)Ljava/lang/StringBuilder;", false
             );
             mv.visitVarInsn(ALOAD, 0);
             mv.visitFieldInsn(GETFIELD, innerClassName, "state", "I");
             mv.visitMethodInsn(
-                INVOKEVIRTUAL,
-                "java/lang/StringBuilder",
-                "append",
-                "(I)Ljava/lang/StringBuilder;",
-                false
+                INVOKEVIRTUAL, "java/lang/StringBuilder", "append", "(I)Ljava/lang/StringBuilder;", false
             );
             mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/StringBuilder", "toString", "()Ljava/lang/String;", false);
             mv.visitMethodInsn(
-                INVOKESPECIAL,
-                "java/lang/IllegalStateException",
-                "<init>",
-                "(Ljava/lang/String;)V",
-                false
+                INVOKESPECIAL, "java/lang/IllegalStateException", "<init>", "(Ljava/lang/String;)V", false
             );
             mv.visitInsn(ATHROW);
             mv.visitMaxs(0, 0);
             mv.visitEnd();
         }
 
-        private boolean hasResultMethodInvocation(MethodNode method) {
+        private boolean hasTerminateMethodInvocation(MethodNode method) {
             ListIterator<AbstractInsnNode> iterator = method.instructions.iterator();
             while (iterator.hasNext()) {
-                if (isResultMethodInvocation(iterator.next())) {
+                if (isTerminateMethodInvocation(iterator.next())) {
                     return true;
                 }
             }
@@ -416,36 +410,71 @@ public class FiberTransformer {
         private boolean isJoinPointMethodInvocation(AbstractInsnNode inst) {
             MethodInsnNode methodNode = getStaticMethodInvocation(inst);
             if (methodNode != null) {
-                String name = methodNode.name;
-                return FIBER_CLASS_NAME.equals(methodNode.owner) && (POINT_CALL.equals(name) || POINT_RESULT.equals(name));
+                return FIBER_CLASS_NAME.equals(methodNode.owner) && JOIN_POINT_METHODS_NAMES.contains(methodNode.name);
             }
             return false;
         }
 
-        private boolean isResultMethodInvocation(AbstractInsnNode inst) {
+        private boolean isTerminateMethodInvocation(AbstractInsnNode inst) {
             MethodInsnNode methodNode = getStaticMethodInvocation(inst);
             if (methodNode != null) {
-                return POINT_RESULT.equals(methodNode.name) && FIBER_CLASS_NAME.equals(methodNode.owner);
+                return TERMINATION_METHODS_NAMES.contains(methodNode.name) && FIBER_CLASS_NAME.equals(methodNode.owner);
             }
             return false;
         }
 
-        private boolean isCallMethodInvocation(AbstractInsnNode inst) {
+        private boolean isNonLiteralTerminateMethod(AbstractInsnNode inst) {
             MethodInsnNode methodNode = getStaticMethodInvocation(inst);
-            if (methodNode != null) {
-                return POINT_CALL.equals(methodNode.name) && FIBER_CLASS_NAME.equals(methodNode.owner);
+            if (methodNode != null && FIBER_CLASS_NAME.equals(methodNode.owner)) {
+                Type[] types = Type.getArgumentTypes(methodNode.desc);
+                if (types.length == 0) {
+                    return "nothing".equals(methodNode.name);
+                }
+                Type inputType = types[0];
+                return "result".equals(methodNode.name)
+                    && types.length == 1
+                    && (inputType.equals(getType(Future.class)) || inputType.equals(getType(Fiber.class)));
             }
             return false;
         }
 
-        private boolean isMethodWithFiberArgumentInvocation(AbstractInsnNode inst) {
+        private boolean isCallMethodWithNonLiteralArgumentInvocation(AbstractInsnNode inst) {
             MethodInsnNode methodNode = getStaticMethodInvocation(inst);
             if (methodNode != null) {
-                return POINT_CALL.equals(methodNode.name)
+                return "call".equals(methodNode.name)
                     && FIBER_CLASS_NAME.equals(methodNode.owner)
-                    && CALL_METHOD_WITH_FIBER_ARG_DESCRIPTOR.equals(methodNode.desc);
+                    && NON_LITERAL_METHODS_DESCRIPTORS.contains(methodNode.desc);
             }
             return false;
+        }
+
+        private MethodInsnNode getInternalCall(String innerClassName, String methodDesc) {
+            Type[] types = Type.getArgumentTypes(methodDesc);
+            if (types[0].equals(getType(Fiber.class))) {
+                return new MethodInsnNode(
+                    INVOKEVIRTUAL, innerClassName, "callInternal", INTERNAL_METHOD_WITH_FIBER_ARG_DESCRIPTOR, false
+                );
+            }
+            return new MethodInsnNode(
+                INVOKEVIRTUAL, innerClassName, "callInternal", INTERNAL_METHOD_WITH_FUTURE_ARG_DESCRIPTOR, false
+            );
+        }
+
+        private MethodInsnNode getInternalResult(String innerClassName, String methodDesc) {
+            Type[] types = Type.getArgumentTypes(methodDesc);
+            if (types.length == 0) {
+                return new MethodInsnNode(
+                    INVOKEVIRTUAL, innerClassName, "nothingInternal", getMethodDescriptor(getType(int.class)), false
+                );
+            }
+            if (types[0].equals(getType(Fiber.class))) {
+                return new MethodInsnNode(
+                    INVOKEVIRTUAL, innerClassName, "resultInternal", INTERNAL_METHOD_WITH_FIBER_ARG_DESCRIPTOR, false
+                );
+            }
+            return new MethodInsnNode(
+                INVOKEVIRTUAL, innerClassName, "resultInternal", INTERNAL_METHOD_WITH_FUTURE_ARG_DESCRIPTOR, false
+            );
         }
     }
 
