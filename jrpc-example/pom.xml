@@ -17,6 +17,11 @@
             <artifactId>jrpc-core</artifactId>
             <version>0.0.1-SNAPSHOT</version>
         </dependency>
+        <dependency>
+            <groupId>com.github.rostmyr.jrpc</groupId>
+            <artifactId>jrpc-fibers</artifactId>
+            <version>0.0.1-SNAPSHOT</version>
+        </dependency>
     </dependencies>
 
     <build>
@@ -29,6 +34,7 @@
                     <execution>
                         <goals>
                             <goal>process-source-files</goal>
+                            <goal>process-fiber-files</goal>
                         </goals>
                     </execution>
                 </executions>
