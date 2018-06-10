@@ -10,6 +10,14 @@ import static com.github.rostmyr.jrpc.fibers.Fiber.*;
  * on 02.06.2018.
  */
 public class TestFiberModel {
+    private long sequence;
+
+    public Fiber<Long> getSequence() {
+        long id = sequence++;
+        long result = id;
+        return result(result);
+    }
+
     public Fiber<String> callFiber() {
         String fiberResult = call(fiberWithSeveralCalls());
         return result(fiberResult);
@@ -35,7 +43,8 @@ public class TestFiberModel {
     }
 
     public Fiber<String> callFiberWithArgument() {
-        String fiberResult = call(callRegularMethod("A", "B"));
+        String firstArg = "A";
+        String fiberResult = call(callRegularMethod(firstArg, "B"));
         return result(fiberResult);
     }
 
@@ -55,6 +64,17 @@ public class TestFiberModel {
         return result(join(first, second));
     }
 
+    public Fiber<String> fiberWithStaticMethodCall() {
+        String second = join("A", "B");
+        return result(second);
+    }
+
+    public Fiber<String> fiberWithAssignment() {
+        String first = "A";
+        String second = join(first, "B");
+        return result(second);
+    }
+
     public Fiber<Integer> fiberWithImmediateReturn() {
         return result(1);
     }
@@ -72,35 +92,15 @@ public class TestFiberModel {
 //        return result(sum);
 //    }
 
-    public class FiberWithVoidResult extends Fiber<Void> {
+    public class FiberWithSequence extends Fiber<Void> {
+        private long id;
 
         @Override
         public int update() {
             switch (state) {
                 case 0: {
-                    return 1;
-                }
-                case 1: {
-                    return nothingInternal();
-                }
-                default: {
-                    throw new IllegalStateException("Unknown state: " + state);
-                }
-            }
-        }
-    }
-
-    public class CallAnotherFiber extends Fiber<String> {
-
-        @Override
-        public int update() {
-            switch (state) {
-                case 0: {
-                    return callInternal(fiberWithSeveralCalls());
-                }
-                case 1: {
-                    this.result = join((String) this.result, "B");
-                    return -1;
+                    this.id = sequence++;
+                    return resultLiteral(id);
                 }
                 default: {
                     throw new IllegalStateException("Unknown state: " + state);
@@ -115,11 +115,34 @@ public class TestFiberModel {
         public int update() {
             switch (state) {
                 case 0: {
-                    return callInternal(getFuture());
+                    return awaitFor(getFuture());
                 }
                 case 1: {
+                    return awaitFuture();
+                }
+                case 2: {
                     this.result = join((String) this.result, "B");
                     return -1;
+                }
+                default: {
+                    throw new IllegalStateException("Unknown state: " + state);
+                }
+            }
+        }
+    }
+
+    public class CallWithAssignment extends Fiber<String> {
+        private String second;
+
+        @Override
+        public int update() {
+            switch (state) {
+                case 0: {
+                    this.second = join("A", "B");
+                    return 1;
+                }
+                case 1: {
+                    return resultLiteral(this.second);
                 }
                 default: {
                     throw new IllegalStateException("Unknown state: " + state);

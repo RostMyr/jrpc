@@ -8,6 +8,7 @@ import java.util.concurrent.Future;
  * on 31.05.2018.
  */
 public abstract class Fiber<E> {
+    protected FiberManager scheduler;
     protected Object result;
     protected Throwable exception;
     protected int state;
@@ -15,17 +16,24 @@ public abstract class Fiber<E> {
 
     // the current fiber we are waiting for
     protected Fiber current;
-    protected FiberManager scheduler;
+    // the current future we are waiting for
+    protected Future future;
 
     public void setState(int state) {
         this.state = state;
     }
 
-    public void awaitFor(Fiber fiber) {
+    protected int awaitFor(Fiber fiber) {
         this.current = fiber;
         if (current.scheduler == null) {
             scheduler.schedule(current);
         }
+        return state + 1;
+    }
+
+    protected int awaitFor(Future future) {
+        this.future = future;
+        return state + 1;
     }
 
     public E getResult() {
@@ -55,12 +63,12 @@ public abstract class Fiber<E> {
      *    awaitFor(call(fiber))
      *    return 1
      * case 1:
-     *    return callInternal(); // returns 1 while current.isReady() returns false
+     *    return awaitFiber(); // returns 1 while current.isReady() returns false
      * case 2:
      *    this.someVariable = this.result;
      * ...
      */
-    protected int callInternal() {
+    protected int awaitFiber() {
         if (!current.isReady()) {
             return state;
         }
@@ -78,15 +86,16 @@ public abstract class Fiber<E> {
     /**
      * Should be called by {@link #call(Future)}}
      *
-     *
      * case 0:
-     *    return this.call(this, future) // returns 0 while future.isDone() returns false
+     *    awaitFor(future)
+     *    return 1
      * case 1:
+     *    return awaitFuture(); // returns 1 while future.isDone() returns false
+     * case 2:
      *    this.someVariable = this.result;
-     *    return 2;
      * ...
      */
-    protected <T, F extends Future<T>> int callInternal(F future) {
+    protected int awaitFuture() {
         if (!future.isDone()) {
             return state;
         }
@@ -107,6 +116,18 @@ public abstract class Fiber<E> {
     }
 
     /**
+     * Should be called by {@link #result(Object)}}
+     *
+     * ...
+     * case n:
+     *    return this.resultLiteral(literal)
+     */
+    protected <T> int resultLiteral(T result) {
+        this.result = result;
+        return -1;
+    }
+
+    /**
      * A marker method
      */
     public static <T, F extends Fiber<T>> F result(F fiber) {
@@ -118,13 +139,12 @@ public abstract class Fiber<E> {
      *
      * ...
      * case n:
-     *    awaitFor(call(fiber))
-     *    return n + 1
+     *    return awaitFor(call(fiber))
      * case n + 1:
-     *    return resultInternal(); // returns n + 1 while current.isReady() returns false
+     *    return waitForFiberResult(); // returns n + 1 while current.isReady() returns false
      * ...
      */
-    protected int resultInternal() {
+    protected int waitForFiberResult() {
         if (!current.isReady()) {
             return state;
         }
@@ -140,18 +160,16 @@ public abstract class Fiber<E> {
     }
 
     /**
-     * Should be called by {@link #result(Fiber)}}
+     * Should be called by {@link #result(Future)}}
      *
-     *
-     * case 0:
-     *    return this.call(this, future) // returns 0 while future.isDone() returns false
-     * case 1:
-     *    this.someVariable = this.result;
-     *    return 2;
      * ...
-     *
+     * case n:
+     *    return awaitFor(call(fiber))
+     * case n + 1:
+     *    return waitForFutureResult(); // returns n + 1 while current.isReady() returns false
+     * ...
      */
-    protected <T, F extends Future<T>> int resultInternal(F future) {
+    protected int waitForFutureResult() {
         if (!future.isDone()) {
             return state;
         }

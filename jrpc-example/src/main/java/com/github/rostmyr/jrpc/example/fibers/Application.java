@@ -31,29 +31,4 @@ public class Application {
 
         return nothing();
     }
-
-    public class AppFiber extends Fiber {
-        private Long id;
-        private User user;
-
-        @Override
-        public int update() {
-            switch(this.state) {
-                case 0:
-                    awaitFor(service.saveUser("Ivan", "Ivanov"));
-                    return 1;
-                case 1:
-                    return callInternal();
-                case 2:
-                    awaitFor(service.getUser((Long) result));
-                    return 3;
-                case 3:
-                    return callInternal();
-                case 4:
-                    return nothingInternal();
-                default:
-                    throw new IllegalStateException("Unknown state: " + this.state);
-            }
-        }
-    }
 }

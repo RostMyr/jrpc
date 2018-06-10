@@ -19,33 +19,8 @@ public class UserService {
     }
 
     public Fiber<Long> saveUser(String firstName, String lastName) {
-//        long id = idSequence;
-        repository.save(new User(idSequence, firstName, lastName));
-        return result(idSequence);
-    }
-
-    public class UserFiberExample extends Fiber<User> {
-        private long id;
-        private String firstName;
-        private String lastName;
-
-        public UserFiberExample(String firstName, String lastName) {
-            this.firstName = firstName;
-            this.lastName = lastName;
-        }
-
-        public int update() {
-            switch(this.state) {
-                case 0:
-                    id = idSequence++;
-                    repository.save(new User(idSequence, firstName, lastName));
-                    return 1;
-                case 1:
-                    result = id;
-                    return -1;
-                default:
-                    throw new IllegalStateException("Unknown state: " + this.state);
-            }
-        }
+        long id = idSequence++;
+        repository.save(new User(id, firstName, lastName));
+        return result(id);
     }
 }

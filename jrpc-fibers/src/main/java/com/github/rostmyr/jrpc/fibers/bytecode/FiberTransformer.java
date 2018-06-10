@@ -1,18 +1,43 @@
 package com.github.rostmyr.jrpc.fibers.bytecode;
 
-import com.github.rostmyr.jrpc.common.utils.Contract;
-import com.github.rostmyr.jrpc.fibers.Fiber;
-import org.objectweb.asm.*;
-import org.objectweb.asm.tree.*;
+import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.ClassVisitor;
+import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.Label;
+import org.objectweb.asm.MethodVisitor;
+import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.Type;
+import org.objectweb.asm.tree.AbstractInsnNode;
+import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.FieldInsnNode;
+import org.objectweb.asm.tree.FieldNode;
+import org.objectweb.asm.tree.InsnList;
+import org.objectweb.asm.tree.InsnNode;
+import org.objectweb.asm.tree.IntInsnNode;
+import org.objectweb.asm.tree.LabelNode;
+import org.objectweb.asm.tree.LdcInsnNode;
+import org.objectweb.asm.tree.LocalVariableNode;
+import org.objectweb.asm.tree.MethodInsnNode;
+import org.objectweb.asm.tree.MethodNode;
+import org.objectweb.asm.tree.TypeInsnNode;
+import org.objectweb.asm.tree.VarInsnNode;
 import org.objectweb.asm.util.CheckClassAdapter;
 import org.objectweb.asm.util.TraceClassVisitor;
 
+import com.github.rostmyr.jrpc.common.utils.Contract;
+import com.github.rostmyr.jrpc.fibers.Fiber;
+
 import java.io.IOException;
 import java.io.PrintWriter;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.ListIterator;
+import java.util.Map;
 import java.util.concurrent.Future;
 
-import static java.util.Arrays.asList;
 import static java.util.stream.Collectors.toList;
 import static org.objectweb.asm.ClassReader.SKIP_FRAMES;
 import static org.objectweb.asm.ClassWriter.COMPUTE_FRAMES;
@@ -25,18 +50,13 @@ import static org.objectweb.asm.Type.*;
  */
 public class FiberTransformer {
     // join points
-    private static final String INTERNAL_METHOD_WITH_FIBER_ARG_DESCRIPTOR =
+    private static final String AWAIT_FIBER_DESC =
         getMethodDescriptor(getType(int.class), getType(Fiber.class));
-    private static final String INTERNAL_METHOD_WITH_FUTURE_ARG_DESCRIPTOR =
+    private static final String AWAIT_FUTURE_DESC =
         getMethodDescriptor(getType(int.class), getType(Future.class));
-
-    private static final Set<String> NON_LITERAL_METHODS_DESCRIPTORS = new HashSet<>(asList(
-        getMethodDescriptor(getType(Object.class), getType(Fiber.class)),
-        getMethodDescriptor(getType(Object.class), getType(Future.class))
-    ));
-
-    private static final Set<String> JOIN_POINT_METHODS_NAMES = new HashSet<>(asList("call", "result", "nothing"));
-    private static final Set<String> TERMINATION_METHODS_NAMES = new HashSet<>(asList("result", "nothing"));
+    private static final String INTERNAL_WITH_LITERAL_ARG =
+        getMethodDescriptor(getType(int.class), getType(Object.class));
+    private static final String INTERNAL_NOTHING = getMethodDescriptor(getType(int.class));
 
     private static String FIBER_CLASS_NAME = getInternalName(Fiber.class);
     private static String FIBER_RETURN_TYPE = getDescriptor(Fiber.class);
@@ -288,29 +308,110 @@ public class FiberTransformer {
                 for (AbstractInsnNode inst : instNodes) {
                     int opcode = inst.getOpcode();
                     if ((opcode == INVOKEVIRTUAL || opcode == INVOKESPECIAL) && name.equals(((MethodInsnNode) inst).owner)) {
-                        for (int j = 0; j < getArgumentTypes(inst).length; j++) {
-                            buffer.addFirst(processedNodes.pollLast());
+                        int argsLength = getArgumentTypes(inst).length;
+                        if (argsLength > 0) {
+                            AbstractInsnNode next = processedNodes.peekLast();
+                            while (next != null) {
+                                buffer.addFirst(processedNodes.pollLast());
+                                if (isPointerToThis(next) && isPointerToThis(processedNodes.peekLast())) {
+                                    break;
+                                }
+                                next = processedNodes.peekLast();
+                            }
                         }
                         processedNodes.add(new VarInsnNode(ALOAD, 0));
                         processedNodes.add(new FieldInsnNode(GETFIELD, innerClassName, "this$0", outerClassName));
                         processedNodes.addAll(buffer);
                         buffer.clear();
+                    } else if ((opcode == INVOKEVIRTUAL || opcode == INVOKESPECIAL) && innerClassName.equals(((MethodInsnNode) inst).owner)) {
+                        int argsLength = getArgumentTypes(inst).length;
+                        if (argsLength > 0) {
+                            AbstractInsnNode next = processedNodes.pollLast();
+                            while (next != null) {
+                                buffer.addFirst(next);
+                                if (isPointerToThis(next) && isPointerToThis(processedNodes.peekLast())) {
+                                    break;
+                                }
+                                next = processedNodes.pollLast();
+                            }
+                        }
+                        processedNodes.add(new VarInsnNode(ALOAD, 0));
+                        processedNodes.add(new VarInsnNode(ALOAD, 0));
+                        processedNodes.addAll(buffer);
+                        buffer.clear();
                     } else if (opcode == GETFIELD && ((FieldInsnNode) inst).owner.equals(name)) {
+                        AbstractInsnNode next = processedNodes.peekLast();
+                        while (next != null && !isPointerToThis(next)) {
+                            buffer.addFirst(processedNodes.pollLast());
+                            next = processedNodes.peekLast();
+                        }
+
+                        // TODO handle access to private fields
+//                        FieldInsnNode fieldNode = (FieldInsnNode) inst;
+//                        FieldNode classFieldNode = getFieldNode(fieldNode.name, fieldNode.desc);
+//                        if (classFieldNode != null && (classFieldNode.access & ACC_PRIVATE) != 0) {
+//                            String methodDesc = "(" + outerClassName + ")" + fieldNode.desc;
+//                            MethodNode staticAccess = this.methods.stream()
+//                                .filter(methodNode -> (methodNode.access & ACC_STATIC) != 0)
+//                                .filter(methodNode -> methodNode.desc.equals(methodDesc))
+//                                .findFirst()
+//                                .orElseThrow(() -> new IllegalStateException("No static method for private field: " + inst));
+//
+//                            processedNodes.add(new MethodInsnNode(INVOKESTATIC, name, staticAccess.name, methodDesc, false));
+//                            processedNodes.add(new VarInsnNode(ALOAD, 0));
+//                            buffer.clear();
+//                            continue;
+//                        }
                         processedNodes.add(new FieldInsnNode(GETFIELD, innerClassName, "this$0", outerClassName));
+                        processedNodes.addAll(buffer);
+                        buffer.clear();
+                    } else if (opcode == PUTFIELD && ((FieldInsnNode) inst).owner.equals(name)) {
+                        AbstractInsnNode next = processedNodes.peekLast();
+                        while (next != null && !isPointerToThis(next)) {
+                            buffer.addFirst(processedNodes.pollLast());
+                            next = processedNodes.peekLast();
+                        }
+
+                        // TODO handle access to private fields
+//                        FieldInsnNode fieldNode = (FieldInsnNode) inst;
+//                        FieldNode classFieldNode = getFieldNode(fieldNode.name, fieldNode.desc);
+//                        if (classFieldNode != null && (classFieldNode.access & ACC_PRIVATE) != 0) {
+//                            String methodDesc = "(" + outerClassName + ")" + fieldNode.desc;
+//                            MethodNode staticAccess = this.methods.stream()
+//                                .filter(methodNode -> (methodNode.access & ACC_STATIC) != 0)
+//                                .filter(methodNode -> methodNode.desc.equals(methodDesc))
+//                                .findFirst()
+//                                .orElseThrow(() -> new IllegalStateException("No static method for private field: " + inst));
+//
+//                            processedNodes.add(new MethodInsnNode(INVOKESTATIC, name, staticAccess.name, methodDesc, false));
+//                            processedNodes.add(new VarInsnNode(ALOAD, 0));
+//                        }
+
+                        processedNodes.add(new FieldInsnNode(GETFIELD, innerClassName, "this$0", outerClassName));
+                        processedNodes.addAll(buffer);
+                        buffer.clear();
                     } else if (opcode >= Opcodes.ILOAD && opcode <= SALOAD) {
-                        // load vars from the class fields
+                        // load vars from the class fields (if it's not a local to frame)
                         int fieldIndex = ((VarInsnNode) inst).var;
-                        if (fieldIndex > 0) { // not this
+                        if (fieldIndex > 0 && fieldIndex < method.localVariables.size()) {
                             LocalVariableNode field = method.localVariables.get(fieldIndex);
+                            // TODO handle access to private fields
+//                            FieldNode classFieldNode = getFieldNode(field.name, field.desc);
+//                            if (classFieldNode != null && (classFieldNode.access & ACC_PRIVATE) != 0) {
+//                                throw new IllegalStateException("Private field " + field);
+//                            }
                             processedNodes.add(new VarInsnNode(ALOAD, 0)); // we need this before get
                             processedNodes.add(new FieldInsnNode(GETFIELD, innerClassName, field.name, field.desc));
                             continue;
                         }
                     } else if (opcode >= ISTORE && opcode <= ASTORE) {
-                        // store vars into the class fields
-                        LocalVariableNode field = method.localVariables.get(((VarInsnNode) inst).var);
-                        processedNodes.add(new FieldInsnNode(PUTFIELD, innerClassName, field.name, field.desc));
-                        continue;
+                        // store vars into the class fields (if it's not a local to frame)
+                        int index = ((VarInsnNode) inst).var;
+                        if (index < method.localVariables.size()) {
+                            LocalVariableNode field = method.localVariables.get(index);
+                            processedNodes.add(new FieldInsnNode(PUTFIELD, innerClassName, field.name, field.desc));
+                            continue;
+                        }
                     }
 
                     processedNodes.add(inst);
@@ -318,33 +419,13 @@ public class FiberTransformer {
                 instByCases.put(i, processedNodes);
             }
 
-            for (int i = 0, newState = 1; i < casesCount; i++, newState++) {
+            // add switch cases
+            for (int i = 0; i < switchCase; i++) {
                 mv.visitLabel(labels[i]);
                 mv.visitVarInsn(ALOAD, 0);
-
-                List<AbstractInsnNode> abstractInstNodes = instByCases.get(i);
-                for (int e = 0; e < abstractInstNodes.size(); e++) {
-                    AbstractInsnNode inst = abstractInstNodes.get(e);
-                    int opcode = inst.getOpcode();
-
-                    // result method invocation
-                    if (opcode >= IRETURN && opcode <= ARETURN && abstractInstNodes.get(e - 1).getOpcode() != NOP) {
-                        mv.visitFieldInsn(PUTFIELD, innerClassName, "result", "Ljava/lang/Object;"); //set result
-                        mv.visitInsn(ICONST_M1);
-                        mv.visitInsn(IRETURN);
-                        break;
-                    }
-
-                    if (opcode == NOP) {
-                        continue;
-                    }
-
-                    inst.accept(mv);
-                }
-
-                // return next state value
-                mv.visitInsn(getPushInst(newState).getOpcode());
-                mv.visitInsn(IRETURN);
+                instByCases.get(i).stream()
+                    .filter(inst -> inst.getOpcode() != NOP)
+                    .forEach(inst -> inst.accept(mv));
             }
 
             // handle default case with exception
@@ -355,9 +436,7 @@ public class FiberTransformer {
             mv.visitInsn(DUP);
             mv.visitMethodInsn(INVOKESPECIAL, "java/lang/StringBuilder", "<init>", "()V", false);
             mv.visitLdcInsn("Unknown state: ");
-            mv.visitMethodInsn(
-                INVOKEVIRTUAL, "java/lang/StringBuilder", "append", "(Ljava/lang/String;)Ljava/lang/StringBuilder;", false
-            );
+            mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/StringBuilder", "append", "(Ljava/lang/String;)Ljava/lang/StringBuilder;", false);
             mv.visitVarInsn(ALOAD, 0);
             mv.visitFieldInsn(GETFIELD, innerClassName, "state", "I");
             mv.visitMethodInsn(
@@ -382,94 +461,14 @@ public class FiberTransformer {
             return false;
         }
 
-        private boolean isJoinPointMethodInvocation(AbstractInsnNode inst) {
-            MethodInsnNode methodNode = getStaticMethodInvocation(inst);
-            if (methodNode != null) {
-                return FIBER_CLASS_NAME.equals(methodNode.owner) && JOIN_POINT_METHODS_NAMES.contains(methodNode.name);
-            }
-            return false;
-        }
-
         private boolean isTerminateMethodInvocation(AbstractInsnNode inst) {
             MethodInsnNode methodNode = getStaticMethodInvocation(inst);
             if (methodNode != null) {
-                return TERMINATION_METHODS_NAMES.contains(methodNode.name) && FIBER_CLASS_NAME.equals(methodNode.owner);
+                String name = methodNode.name;
+                return FIBER_CLASS_NAME.equals(methodNode.owner)
+                    && ("nothing".equals(name) || "result".equals(name));
             }
             return false;
-        }
-
-        private boolean isResultMethodWithFiberArgInvocation(AbstractInsnNode inst) {
-            MethodInsnNode methodNode = getStaticMethodInvocation(inst);
-            if (methodNode != null) {
-                return "result".equals(methodNode.name)
-                    && FIBER_CLASS_NAME.equals(methodNode.owner)
-                    && getMethodDescriptor(getType(Fiber.class), getType(Fiber.class)).equals(methodNode.owner);
-            }
-            return false;
-        }
-
-        private boolean isNonLiteralTerminateMethod(AbstractInsnNode inst) {
-            MethodInsnNode methodNode = getStaticMethodInvocation(inst);
-            if (methodNode != null && FIBER_CLASS_NAME.equals(methodNode.owner)) {
-                Type[] types = Type.getArgumentTypes(methodNode.desc);
-                if (types.length == 0) {
-                    return "nothing".equals(methodNode.name);
-                }
-                Type inputType = types[0];
-                return "result".equals(methodNode.name)
-                    && types.length == 1
-                    && (inputType.equals(getType(Future.class)) || inputType.equals(getType(Fiber.class)));
-            }
-            return false;
-        }
-
-        private boolean isCallMethodWithFutureArgumentInvocation(AbstractInsnNode inst) {
-            MethodInsnNode methodNode = getStaticMethodInvocation(inst);
-            if (methodNode != null) {
-                return "call".equals(methodNode.name)
-                    && FIBER_CLASS_NAME.equals(methodNode.owner)
-                    && getMethodDescriptor(getType(Object.class), getType(Future.class)).equals(methodNode.desc);
-            }
-            return false;
-        }
-
-        private boolean isCallMethodWithFiberArgInvocation(AbstractInsnNode inst) {
-            MethodInsnNode methodNode = getStaticMethodInvocation(inst);
-            if (methodNode != null) {
-                return "call".equals(methodNode.name)
-                    && FIBER_CLASS_NAME.equals(methodNode.owner)
-                    && getMethodDescriptor(getType(Object.class), getType(Fiber.class)).equals(methodNode.desc);
-            }
-            return false;
-        }
-
-        private MethodInsnNode getInternalCall(String innerClassName, String methodDesc) {
-            Type[] types = Type.getArgumentTypes(methodDesc);
-            if (types[0].equals(getType(Fiber.class))) {
-                return new MethodInsnNode(
-                    INVOKEVIRTUAL, innerClassName, "callInternal", INTERNAL_METHOD_WITH_FIBER_ARG_DESCRIPTOR, false
-                );
-            }
-            return new MethodInsnNode(
-                INVOKEVIRTUAL, innerClassName, "callInternal", INTERNAL_METHOD_WITH_FUTURE_ARG_DESCRIPTOR, false
-            );
-        }
-
-        private MethodInsnNode getInternalResult(String innerClassName, String methodDesc) {
-            Type[] types = Type.getArgumentTypes(methodDesc);
-            if (types.length == 0) {
-                return new MethodInsnNode(
-                    INVOKEVIRTUAL, innerClassName, "nothingInternal", getMethodDescriptor(getType(int.class)), false
-                );
-            }
-            if (types[0].equals(getType(Fiber.class))) {
-                return new MethodInsnNode(
-                    INVOKEVIRTUAL, innerClassName, "resultInternal", INTERNAL_METHOD_WITH_FIBER_ARG_DESCRIPTOR, false
-                );
-            }
-            return new MethodInsnNode(
-                INVOKEVIRTUAL, innerClassName, "resultInternal", INTERNAL_METHOD_WITH_FUTURE_ARG_DESCRIPTOR, false
-            );
         }
     }
 
