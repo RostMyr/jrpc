@@ -12,31 +12,31 @@ import static com.github.rostmyr.jrpc.fibers.Fiber.*;
 public class TestFiberModel {
     private long sequence;
 
-    public Fiber<Long> getSequence() {
-        long id = sequence++;
-        long result = id;
-        return result(result);
-    }
-
-    public Fiber<String> callFiber() {
-        String fiberResult = call(fiberWithSeveralCalls());
-        return result(fiberResult);
-    }
+//    public Fiber<Long> getSequence() {
+//        long id = sequence++;
+//        long result = id;
+//        return result(result);
+//    }
+//
+//    public Fiber<String> callFiber() {
+//        String fiberResult = call(fiberWithSeveralCalls());
+//        return result(fiberResult);
+//    }
 
     public Fiber<String> callFuture() {
         String fiberResult = call(getFuture());
         return result(fiberResult);
     }
+//
+//    public Fiber<Void> getNothing() {
+//        String fiberResult = call(getFuture());
+//        return nothing();
+//    }
 
-    public Fiber<Void> getNothing() {
-        String fiberResult = call(getFuture());
-        return nothing();
-    }
-
-    public Fiber<String> callFiberInReturn() {
-        String fiberResult = call(getFuture());
-        return result(fiberWithSeveralCalls());
-    }
+//    public Fiber<String> callFiberInReturn() {
+//        String fiberResult = call(getFuture());
+//        return result(fiberWithSeveralCalls());
+//    }
 
     public Fiber<String> callFutureInReturn() {
         return result(getFuture());
@@ -63,17 +63,17 @@ public class TestFiberModel {
         String second = call("B");
         return result(join(first, second));
     }
-
-    public Fiber<String> fiberWithStaticMethodCall() {
-        String second = join("A", "B");
-        return result(second);
-    }
-
-    public Fiber<String> fiberWithAssignment() {
-        String first = "A";
-        String second = join(first, "B");
-        return result(second);
-    }
+//
+//    public Fiber<String> fiberWithStaticMethodCall() {
+//        String second = join("A", "B");
+//        return result(second);
+//    }
+//
+//    public Fiber<String> fiberWithAssignment() {
+//        String first = "A";
+//        String second = join(first, "B");
+//        return result(second);
+//    }
 
     public Fiber<Integer> fiberWithImmediateReturn() {
         return result(1);
@@ -92,44 +92,30 @@ public class TestFiberModel {
 //        return result(sum);
 //    }
 
-    public class FiberWithSequence extends Fiber<Void> {
-        private long id;
-
-        @Override
-        public int update() {
-            switch (state) {
-                case 0: {
-                    this.id = sequence++;
-                    return resultLiteral(id);
-                }
-                default: {
-                    throw new IllegalStateException("Unknown state: " + state);
-                }
+    public int CallMethodChain_FiberUpdate(CallMethodChain_Fiber fiber) {
+        switch (fiber.state) {
+            case 0: {
+                fiber.string = getString().concat("Chained Call!");
+                return 1;
+            }
+            case 1: {
+                return fiber.resultLiteral(fiber.result);
+            }
+            default: {
+                throw new IllegalStateException("Unknown state: " + fiber.state);
             }
         }
     }
 
-    public class CallFuture extends Fiber<String> {
+    public class CallMethodChain_Fiber extends Fiber<String> {
+        public String string;
 
         @Override
         public int update() {
-            switch (state) {
-                case 0: {
-                    return awaitFor(getFuture());
-                }
-                case 1: {
-                    return awaitFuture();
-                }
-                case 2: {
-                    this.result = join((String) this.result, "B");
-                    return -1;
-                }
-                default: {
-                    throw new IllegalStateException("Unknown state: " + state);
-                }
-            }
+            return CallMethodChain_FiberUpdate(this);
         }
     }
+
 
     public class CallWithAssignment extends Fiber<String> {
         private String second;

@@ -205,103 +205,158 @@ public class FiberTransformer {
             mv.visitVarInsn(ALOAD, 0);
             mv.visitFieldInsn(GETFIELD, innerClassName, "state", "I");
 
-            int casesCount = 0;
-            InsnList instructions = method.instructions;
-            for (int i = 0; i < instructions.size(); i++) {
-                AbstractInsnNode insnNode = instructions.get(i);
-                if (isJoinPointMethodInvocation(insnNode)) {
-                    casesCount++;
-                    // if we pass fiber as argument we need to add a new case to wait until it's ready
-                    if (isCallMethodWithFutureArgumentInvocation(insnNode)) {
-                        casesCount++;
-                    }
-                }
-            }
-
-            Label[] labels = new Label[casesCount + 1];
-            for (int i = 0; i < casesCount; i++) {
-                labels[i] = new Label();
-            }
-            labels[casesCount] = new Label(); // default label
-
-            int[] values = new int[casesCount];
-            for (int i = 0; i < casesCount; i++) {
-                values[i] = i;
-            }
-
-            mv.visitLookupSwitchInsn(labels[casesCount], values, Arrays.copyOf(labels, labels.length - 1));
-
             // create a map with instructions by cases
             Map<Integer, List<AbstractInsnNode>> instByCases = new HashMap<>();
-            for (int i = 0; i < casesCount; i++) {
-                instByCases.put(i, new ArrayList<>());
-            }
+            instByCases.put(0, new ArrayList<>());
 
-            // split whole method by label nodes and join points
-            boolean foundPoint = false;
-            for (int i = 0, j = 0; i < instructions.size() && j < casesCount; i++) {
+            // method instructions
+            int switchCase = 0;
+            InsnList instructions = method.instructions;
+            for (int i = 0; i < instructions.size(); i++) {
                 AbstractInsnNode inst = instructions.get(i);
-                if (isJoinPointMethodInvocation(inst)) {
-                    // nothing or return(Fiber/Future)
-                    if (isNonLiteralTerminateMethod(inst)) {
-                        List<AbstractInsnNode> instNodes = instByCases.get(j);
-                        instNodes.add(getInternalResult(innerClassName, ((MethodInsnNode) inst).desc));
-                        instNodes.add(new InsnNode(NOP)); // marker
-                        instNodes.add(new InsnNode(IRETURN));
-                        j++;
-                        continue;
+                MethodInsnNode methodInvocation = getStaticMethodInvocation(inst);
+                if (isCallMethodWithFiberArg(methodInvocation)) {
+                    putInsn(instByCases, switchCase, new MethodInsnNode(INVOKEVIRTUAL, innerClassName, "awaitFor", AWAIT_FIBER_DESC, false));
+                    putInsn(instByCases, switchCase, new InsnNode(IRETURN));
+
+                    // add next case
+                    switchCase++;
+                    putInsn(instByCases, switchCase, new MethodInsnNode(INVOKEVIRTUAL, innerClassName, "awaitFiber", getMethodDescriptor(getType(int.class)), false));
+                    putInsn(instByCases, switchCase, new InsnNode(IRETURN));
+
+                    // add next case
+                    switchCase++;
+                    // skip check cast since we store a var in result field
+                    inst = inst.getNext();
+                    String varDesc = null;
+                    if (inst.getOpcode() == CHECKCAST) {
+                        i++;
+                        varDesc = ((TypeInsnNode) inst).desc;
                     }
-                    // call(Future)
-                    if (isCallMethodWithFutureArgumentInvocation(inst)) {
-                        List<AbstractInsnNode> instNodes = instByCases.get(j);
 
-                        // replace it with call to internal method
-                        instNodes.add(getInternalCall(innerClassName, ((MethodInsnNode) inst).desc));
-                        instNodes.add(new InsnNode(NOP)); // marker
-                        instNodes.add(new InsnNode(IRETURN));
-
-                        // skip check cast since we store a var in result field
-                        inst = inst.getNext();
-                        String varDesc = null;
-                        if (inst.getOpcode() == CHECKCAST) {
-                            i++;
-                            varDesc = ((TypeInsnNode) inst).desc;
-                        }
-
-                        // skip storing it to the local var
-                        inst = inst.getNext();
-                        LocalVariableNode field = null;
-                        if (inst.getOpcode() == ASTORE) {
-                            i++;
-                            field = method.localVariables.get(((VarInsnNode) inst).var);
-                        }
-
-                        j++;
-                        instNodes = instByCases.get(j);
-                        instNodes.add(new VarInsnNode(ALOAD, 0));
-                        instNodes.add(new VarInsnNode(ALOAD, 0));
-                        instNodes.add(new FieldInsnNode(GETFIELD, innerClassName, "result", "Ljava/lang/Object;"));
-                        instNodes.add(new TypeInsnNode(CHECKCAST, varDesc));
-                        Contract.checkNotNull(field, "Missing field assignment");
-                        instNodes.add(new FieldInsnNode(PUTFIELD, innerClassName, field.name, field.desc));
-
-                        j++;
-                        continue;
-
+                    // skip storing it to the local var
+                    inst = inst.getNext();
+                    LocalVariableNode field = null;
+                    if (inst.getOpcode() >= ISTORE && inst.getOpcode() <= ASTORE) {
+                        i++;
+                        field = method.localVariables.get(((VarInsnNode) inst).var);
                     }
-                    foundPoint = true;
+                    putInsn(instByCases, switchCase, new VarInsnNode(ALOAD, 0));
+                    putInsn(instByCases, switchCase, new VarInsnNode(ALOAD, 0));
+                    putInsn(instByCases, switchCase, new FieldInsnNode(GETFIELD, innerClassName, "result", "Ljava/lang/Object;"));
+                    putInsn(instByCases, switchCase, new TypeInsnNode(CHECKCAST, varDesc));
+                    Contract.checkNotNull(field, "Missing field assignment");
+                    putInsn(instByCases, switchCase, new FieldInsnNode(PUTFIELD, innerClassName, field.name, field.desc));
+
+                    putInsn(instByCases, switchCase, getPushInst(switchCase + 1));
+                    putInsn(instByCases, switchCase, new InsnNode(IRETURN));
+                    switchCase++;
                     continue;
                 }
+                if (isCallMethodWithFutureArg(methodInvocation)) {
+                    // replace it with call to internal method
+                    putInsn(instByCases, switchCase, new MethodInsnNode(INVOKEVIRTUAL, innerClassName, "awaitFor", AWAIT_FUTURE_DESC, false));
+                    putInsn(instByCases, switchCase, new InsnNode(IRETURN));
 
-                instByCases.get(j).add(inst);
-                if (inst instanceof LabelNode && foundPoint && inst.getNext() != null) {
-                    foundPoint = false;
-                    j++;
+                    // add next case
+                    switchCase++;
+                    putInsn(instByCases, switchCase, new MethodInsnNode(INVOKEVIRTUAL, innerClassName, "awaitFuture", getMethodDescriptor(getType(int.class)), false));
+                    putInsn(instByCases, switchCase, new InsnNode(IRETURN));
+
+                    // add next case
+                    switchCase++;
+                    // skip check cast since we store a var in result field
+                    inst = inst.getNext();
+                    String varDesc = null;
+                    if (inst.getOpcode() == CHECKCAST) {
+                        i++;
+                        varDesc = ((TypeInsnNode) inst).desc;
+                    }
+
+                    // skip storing it to the local var
+                    inst = inst.getNext();
+                    LocalVariableNode field = null;
+                    if (inst.getOpcode() >= ISTORE && inst.getOpcode() <= ASTORE) {
+                        i++;
+                        field = method.localVariables.get(((VarInsnNode) inst).var);
+                    }
+                    putInsn(instByCases, switchCase, new VarInsnNode(ALOAD, 0));
+                    putInsn(instByCases, switchCase, new VarInsnNode(ALOAD, 0));
+                    putInsn(instByCases, switchCase, new FieldInsnNode(GETFIELD, innerClassName, "result", "Ljava/lang/Object;"));
+                    putInsn(instByCases, switchCase, new TypeInsnNode(CHECKCAST, varDesc));
+                    Contract.checkNotNull(field, "Missing field assignment");
+                    putInsn(instByCases, switchCase, new FieldInsnNode(PUTFIELD, innerClassName, field.name, field.desc));
+
+                    putInsn(instByCases, switchCase, getPushInst(switchCase + 1));
+                    putInsn(instByCases, switchCase, new InsnNode(IRETURN));
+                    switchCase++;
+                    continue;
                 }
+                if (isCallMethodWithLiteralArg(methodInvocation)) {
+                    AbstractInsnNode next = inst.getNext();
+                    while (next != null && !(next instanceof LabelNode)) {
+                        i++;
+                        putInsn(instByCases, switchCase, next);
+                        next = next.getNext();
+                    }
+                    putInsn(instByCases, switchCase, getPushInst(switchCase + 1));
+                    putInsn(instByCases, switchCase, new InsnNode(IRETURN));
+                    switchCase++;
+                    continue;
+                }
+                if (isReturnMethodWithFiberArg(methodInvocation)) {
+                    putInsn(instByCases, switchCase, new MethodInsnNode(INVOKEVIRTUAL, innerClassName, "awaitFor", AWAIT_FIBER_DESC, false));
+                    putInsn(instByCases, switchCase, new InsnNode(IRETURN));
+
+                    // add last case
+                    switchCase++;
+                    putInsn(instByCases, switchCase, new VarInsnNode(ALOAD, 0));
+                    putInsn(instByCases, switchCase, new MethodInsnNode(INVOKEVIRTUAL, innerClassName, "waitForFiberResult", getMethodDescriptor(getType(int.class)), false));
+                    putInsn(instByCases, switchCase, new InsnNode(IRETURN));
+                    break;
+                }
+                if (isReturnMethodWithFutureArg(methodInvocation)) {
+                    putInsn(instByCases, switchCase, new MethodInsnNode(INVOKEVIRTUAL, innerClassName, "awaitFor", AWAIT_FUTURE_DESC, false));
+                    putInsn(instByCases, switchCase, new InsnNode(IRETURN));
+
+                    // add last case
+                    switchCase++;
+                    putInsn(instByCases, switchCase, new VarInsnNode(ALOAD, 0));
+                    putInsn(instByCases, switchCase, new MethodInsnNode(INVOKEVIRTUAL, innerClassName, "waitForFutureResult", getMethodDescriptor(getType(int.class)), false));
+                    putInsn(instByCases, switchCase, new InsnNode(IRETURN));
+                    break;
+                }
+                if (isReturnMethodWithLiteralArg(methodInvocation)) {
+                    // replace it with call to internal method
+                    putInsn(instByCases, switchCase, new MethodInsnNode(INVOKEVIRTUAL, innerClassName, "resultLiteral", INTERNAL_WITH_LITERAL_ARG, false));
+                    putInsn(instByCases, switchCase, new InsnNode(IRETURN));
+                    break;
+                }
+                if (isReturnNothingMethod(methodInvocation)) {
+                    // replace it with call to internal method
+                    putInsn(instByCases, switchCase, new MethodInsnNode(INVOKEVIRTUAL, innerClassName, "nothingInternal", INTERNAL_NOTHING, false));
+                    putInsn(instByCases, switchCase, new InsnNode(IRETURN));
+                    break;
+                }
+                putInsn(instByCases, switchCase, inst);
             }
 
+            switchCase++;
+            // insert switch table
+            Label[] labels = new Label[switchCase + 1];
+            for (int i = 0; i < switchCase; i++) {
+                labels[i] = new Label();
+            }
+            labels[switchCase] = new Label(); // default label
+
+            int[] values = new int[switchCase];
+            for (int i = 0; i < switchCase; i++) {
+                values[i] = i;
+            }
+            mv.visitLookupSwitchInsn(labels[switchCase], values, Arrays.copyOf(labels, labels.length - 1));
+
             // post process instructions
-            for (int i = 0; i < casesCount; i++) {
+            for (int i = 0; i < switchCase; i++) {
                 List<AbstractInsnNode> instNodes = instByCases.get(i);
                 LinkedList<AbstractInsnNode> processedNodes = new LinkedList<>();
                 LinkedList<AbstractInsnNode> buffer = new LinkedList<>();
@@ -429,7 +484,7 @@ public class FiberTransformer {
             }
 
             // handle default case with exception
-            mv.visitLabel(labels[casesCount]);
+            mv.visitLabel(labels[switchCase]);
             mv.visitTypeInsn(NEW, "java/lang/IllegalStateException");
             mv.visitInsn(DUP);
             mv.visitTypeInsn(NEW, "java/lang/StringBuilder");
@@ -439,16 +494,81 @@ public class FiberTransformer {
             mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/StringBuilder", "append", "(Ljava/lang/String;)Ljava/lang/StringBuilder;", false);
             mv.visitVarInsn(ALOAD, 0);
             mv.visitFieldInsn(GETFIELD, innerClassName, "state", "I");
-            mv.visitMethodInsn(
-                INVOKEVIRTUAL, "java/lang/StringBuilder", "append", "(I)Ljava/lang/StringBuilder;", false
-            );
+            mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/StringBuilder", "append", "(I)Ljava/lang/StringBuilder;", false);
             mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/StringBuilder", "toString", "()Ljava/lang/String;", false);
-            mv.visitMethodInsn(
-                INVOKESPECIAL, "java/lang/IllegalStateException", "<init>", "(Ljava/lang/String;)V", false
-            );
+            mv.visitMethodInsn(INVOKESPECIAL, "java/lang/IllegalStateException", "<init>", "(Ljava/lang/String;)V", false);
             mv.visitInsn(ATHROW);
             mv.visitMaxs(0, 0);
             mv.visitEnd();
+        }
+
+        private FieldNode getFieldNode(String name, String desc) {
+            return fields.stream()
+                .filter(fieldNode -> fieldNode.name.equals(name))
+                .filter(fieldNode -> fieldNode.desc.equals(desc))
+                .findFirst()
+                .orElse(null);
+        }
+
+        private void putInsn(Map<Integer, List<AbstractInsnNode>> instByCases, int switchCase, AbstractInsnNode node) {
+            instByCases
+                .computeIfAbsent(switchCase, k -> new ArrayList<>())
+                .add(node);
+        }
+
+        private boolean isPointerToThis(AbstractInsnNode insn) {
+            return insn instanceof VarInsnNode && ((VarInsnNode) insn).var == 0;
+        }
+
+        private boolean isCallMethodWithFiberArg(MethodInsnNode node) {
+            return isCallMethodWithArg(node, Fiber.class);
+        }
+
+        private boolean isCallMethodWithFutureArg(MethodInsnNode node) {
+            return isCallMethodWithArg(node, Future.class);
+        }
+
+        private boolean isCallMethodWithLiteralArg(MethodInsnNode node) {
+            return isCallMethodWithArg(node, Object.class);
+        }
+
+        private boolean isCallMethodWithArg(MethodInsnNode node, Class clazz) {
+            if (node == null) {
+                return false;
+            }
+            return "call".equals(node.name)
+                && FIBER_CLASS_NAME.equals(node.owner)
+                && getMethodDescriptor(getType(Object.class), getType(clazz)).equals(node.desc);
+        }
+
+        private boolean isReturnMethodWithFiberArg(MethodInsnNode node) {
+            return isReturnMethodWithArg(node, Fiber.class);
+        }
+
+        private boolean isReturnMethodWithFutureArg(MethodInsnNode node) {
+            return isReturnMethodWithArg(node, Future.class);
+        }
+
+        private boolean isReturnMethodWithLiteralArg(MethodInsnNode node) {
+            return isReturnMethodWithArg(node, Object.class);
+        }
+
+        private boolean isReturnMethodWithArg(MethodInsnNode node, Class clazz) {
+            if (node == null) {
+                return false;
+            }
+            return "result".equals(node.name)
+                && FIBER_CLASS_NAME.equals(node.owner)
+                && getMethodDescriptor(getType(Fiber.class), getType(clazz)).equals(node.desc);
+        }
+
+        private boolean isReturnNothingMethod(MethodInsnNode node) {
+            if (node == null) {
+                return false;
+            }
+            return "nothing".equals(node.name)
+                && FIBER_CLASS_NAME.equals(node.owner)
+                && getMethodDescriptor(getType(Fiber.class)).equals(node.desc);
         }
 
         private boolean hasTerminateMethodInvocation(MethodNode method) {
