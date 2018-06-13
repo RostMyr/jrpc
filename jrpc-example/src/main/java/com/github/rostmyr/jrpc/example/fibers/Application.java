@@ -14,7 +14,7 @@ import static com.github.rostmyr.jrpc.fibers.Fiber.nothing;
  * on 02.06.2018.
  */
 public class Application {
-    protected final UserService service = new UserService();
+    private final UserService service = new UserService();
 
     public static void main(String[] args) {
         FiberManager fiberManager = FiberManagers.current();

@@ -185,7 +185,7 @@ public class FiberClassNodeAdapter extends ClassNode {
         MethodVisitor mv = visitMethod(ACC_PROTECTED, method.name + "_FiberUpdate", "(L" + innerClassName + ";)I", null, null);
         mv.visitCode();
         mv.visitVarInsn(ALOAD, 1);
-        mv.visitFieldInsn(GETFIELD, innerClassName, "state", "I");
+        mv.visitMethodInsn(INVOKEVIRTUAL, innerClassName, "getState", "()I", false);
 
         // create a map with instructions by cases
         Map<Integer, List<AbstractInsnNode>> instByCases = new HashMap<>();
@@ -226,7 +226,7 @@ public class FiberClassNodeAdapter extends ClassNode {
                 }
                 putInsn(instByCases, switchCase, new InsnNode(NOP));
                 putInsn(instByCases, switchCase, new VarInsnNode(ALOAD, 1));
-                putInsn(instByCases, switchCase, new FieldInsnNode(GETFIELD, innerClassName, "result", "Ljava/lang/Object;"));
+                putInsn(instByCases, switchCase, new MethodInsnNode(INVOKEVIRTUAL, innerClassName, "getResult", "()Ljava/lang/Object;", false));
                 putInsn(instByCases, switchCase, new TypeInsnNode(CHECKCAST, varDesc));
                 Contract.checkNotNull(field, "Missing field assignment");
                 putInsn(instByCases, switchCase, new FieldInsnNode(PUTFIELD, innerClassName, field.name, field.desc));
@@ -267,7 +267,7 @@ public class FiberClassNodeAdapter extends ClassNode {
                 putInsn(instByCases, switchCase, new VarInsnNode(ALOAD, 1));
                 putInsn(instByCases, switchCase, new InsnNode(NOP));
                 putInsn(instByCases, switchCase, new VarInsnNode(ALOAD, 1));
-                putInsn(instByCases, switchCase, new FieldInsnNode(GETFIELD, innerClassName, "result", "Ljava/lang/Object;"));
+                putInsn(instByCases, switchCase, new MethodInsnNode(INVOKEVIRTUAL, innerClassName, "getResult", "()Ljava/lang/Object;", false));
                 putInsn(instByCases, switchCase, new TypeInsnNode(CHECKCAST, varDesc));
                 Contract.checkNotNull(field, "Missing field assignment");
                 putInsn(instByCases, switchCase, new FieldInsnNode(PUTFIELD, innerClassName, field.name, field.desc));

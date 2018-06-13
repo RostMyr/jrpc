@@ -19,21 +19,12 @@ public abstract class Fiber<E> {
     // the current future we are waiting for
     protected Future future;
 
+    public int getState() {
+        return state;
+    }
+
     public void setState(int state) {
         this.state = state;
-    }
-
-    protected int awaitFor(Fiber fiber) {
-        this.current = fiber;
-        if (current.scheduler == null) {
-            scheduler.schedule(current);
-        }
-        return state + 1;
-    }
-
-    protected int awaitFor(Future future) {
-        this.future = future;
-        return state + 1;
     }
 
     public E getResult() {
@@ -41,6 +32,19 @@ public abstract class Fiber<E> {
     }
 
     public abstract int update();
+
+    public int awaitFor(Fiber fiber) {
+        this.current = fiber;
+        if (current.scheduler == null) {
+            scheduler.schedule(current);
+        }
+        return state + 1;
+    }
+
+    public int awaitFor(Future future) {
+        this.future = future;
+        return state + 1;
+    }
 
     /**
      * A marker method
@@ -68,7 +72,7 @@ public abstract class Fiber<E> {
      *    this.someVariable = this.result;
      * ...
      */
-    protected int awaitFiber() {
+    public int awaitFiber() {
         if (!current.isReady()) {
             return state;
         }
@@ -95,7 +99,7 @@ public abstract class Fiber<E> {
      *    this.someVariable = this.result;
      * ...
      */
-    protected int awaitFuture() {
+    public int awaitFuture() {
         if (!future.isDone()) {
             return state;
         }
@@ -122,7 +126,7 @@ public abstract class Fiber<E> {
      * case n:
      *    return this.resultLiteral(literal)
      */
-    protected <T> int resultLiteral(T result) {
+    public <T> int resultLiteral(T result) {
         this.result = result;
         return -1;
     }
@@ -144,7 +148,7 @@ public abstract class Fiber<E> {
      *    return waitForFiberResult(); // returns n + 1 while current.isReady() returns false
      * ...
      */
-    protected int waitForFiberResult() {
+    public int waitForFiberResult() {
         if (!current.isReady()) {
             return state;
         }
@@ -169,7 +173,7 @@ public abstract class Fiber<E> {
      *    return waitForFutureResult(); // returns n + 1 while current.isReady() returns false
      * ...
      */
-    protected int waitForFutureResult() {
+    public int waitForFutureResult() {
         if (!future.isDone()) {
             return state;
         }
@@ -197,7 +201,7 @@ public abstract class Fiber<E> {
      * ...
      *
      */
-    protected int nothingInternal() {
+    public int nothingInternal() {
         return -1;
     }
 

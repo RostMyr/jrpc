@@ -11,8 +11,8 @@ import static com.github.rostmyr.jrpc.fibers.Fiber.result;
  * on 07.06.2018.
  */
 public class UserService {
-    protected final UserRepository repository = new UserRepository();
-    protected long idSequence = 1L;
+    private final UserRepository repository = new UserRepository();
+    private long idSequence = 1L;
 
     public Fiber<User> getUser(long id) {
         return result(repository.getById(id));
