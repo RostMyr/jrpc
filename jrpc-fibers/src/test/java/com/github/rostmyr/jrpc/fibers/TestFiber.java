@@ -1,10 +1,8 @@
 package com.github.rostmyr.jrpc.fibers;
 
-import org.junit.Test;
-
-import com.github.rostmyr.jrpc.fibers.bytecode.FiberTransformer;
 import com.github.rostmyr.jrpc.fibers.bytecode.FiberTransformerResult;
-import com.github.rostmyr.jrpc.fibers.bytecode.FiberTransformerV2;
+import com.github.rostmyr.jrpc.fibers.bytecode.FiberTransformer;
+import org.junit.Test;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -23,18 +21,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 public class TestFiber {
 
     @Test
-    public void manualInstrumentationTestV1() throws IOException {
-        FiberTransformer instrumentation = new FiberTransformer(TestFiberModel.class, true);
-        FiberTransformerResult result = instrumentation.instrument();
-        Files.write(Paths.get(TestFiberModel.class.getSimpleName() + ".class"), result.getMainClass());
-        for (Map.Entry<String, byte[]> fiber : result.getFibers().entrySet()) {
-            Files.write(Paths.get(fiber.getKey() + ".class"), fiber.getValue());
-        }
-    }
-
-    @Test
-    public void manualInstrumentationTestV2() throws IOException {
-        FiberTransformerV2 instrumentation = new FiberTransformerV2(TestFiberModel.class, false);
+    public void manualInstrumentationTest() throws IOException {
+        FiberTransformer instrumentation = new FiberTransformer(TestFiberModel.class, false);
         FiberTransformerResult result = instrumentation.instrument();
         Files.write(Paths.get(TestFiberModel.class.getSimpleName() + ".class"), result.getMainClass());
         for (Map.Entry<String, byte[]> fiber : result.getFibers().entrySet()) {

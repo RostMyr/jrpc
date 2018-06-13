@@ -1,7 +1,7 @@
 package com.github.rostmyr.jrpc.maven;
 
 import com.github.rostmyr.jrpc.fibers.bytecode.FiberTransformerResult;
-import com.github.rostmyr.jrpc.fibers.bytecode.FiberTransformerV2;
+import com.github.rostmyr.jrpc.fibers.bytecode.FiberTransformer;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugins.annotations.LifecyclePhase;
 import org.apache.maven.plugins.annotations.Mojo;
@@ -61,7 +61,7 @@ public class FiberSourceMogo extends AbstractMojo {
     private Consumer<Path> processCompiledClasses() {
         return path -> {
             try {
-                FiberTransformerResult result = new FiberTransformerV2(readAllBytes(path), false).instrument();
+                FiberTransformerResult result = new FiberTransformer(readAllBytes(path), false).instrument();
                 if (result.getMainClass() == null) {
                     return;
                 }
