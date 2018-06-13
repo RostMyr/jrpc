@@ -28,7 +28,6 @@
 
     <modules>
         <module>jrpc-common</module>
-        <module>jrpc-fibers</module>
         <module>jrpc-maven-plugin</module>
         <module>jrpc-core</module>
         <module>jrpc-example</module>
