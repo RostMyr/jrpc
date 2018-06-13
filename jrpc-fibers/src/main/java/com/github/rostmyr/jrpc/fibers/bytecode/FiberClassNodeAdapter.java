@@ -21,8 +21,7 @@ import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.TypeInsnNode;
 import org.objectweb.asm.tree.VarInsnNode;
-import org.objectweb.asm.util.CheckClassAdapter;
-import org.objectweb.asm.util.TraceClassVisitor;
+import org.objectweb.asm.util.*;
 
 import com.github.rostmyr.jrpc.common.utils.Contract;
 import com.github.rostmyr.jrpc.fibers.Fiber;
@@ -174,6 +173,14 @@ public class FiberClassNodeAdapter extends ClassNode {
 
     private void insertUpdateMethod(String innerClassName, MethodNode method) {
         String outerClassName = "L" + name + ";";
+
+        // debug
+//        Printer p = new Textifier(ASM6) {
+//            @Override public void visitMethodEnd() {
+//                print(new PrintWriter(System.out)); // print it after it has been visited
+//            }
+//        };
+//        MethodVisitor mv = new TraceMethodVisitor(visitMethod(ACC_PROTECTED, method.name + "_FiberUpdate", "(L" + innerClassName + ";)I", null, null), p);
 
         MethodVisitor mv = visitMethod(ACC_PROTECTED, method.name + "_FiberUpdate", "(L" + innerClassName + ";)I", null, null);
         mv.visitCode();
@@ -355,6 +362,7 @@ public class FiberClassNodeAdapter extends ClassNode {
                     int index = ((VarInsnNode) inst).var;
                     if (index < method.localVariables.size()) {
                         LocalVariableNode field = method.localVariables.get(index);
+                        putInsnAfterLineNumber(processedNodes, new VarInsnNode(ALOAD, 1));
                         processedNodes.add(new FieldInsnNode(PUTFIELD, innerClassName, field.name, field.desc));
                         continue;
                     }
@@ -421,7 +429,10 @@ public class FiberClassNodeAdapter extends ClassNode {
     }
 
     private static void putInsnAfterLineNumber(Map<Integer, List<AbstractInsnNode>> instByCases, int switchCase, AbstractInsnNode node) {
-        List<AbstractInsnNode> insnList = instByCases.computeIfAbsent(switchCase, k -> new ArrayList<>());
+        putInsnAfterLineNumber(instByCases.computeIfAbsent(switchCase, k -> new ArrayList<>()), node);
+    }
+
+    private static void putInsnAfterLineNumber(List<AbstractInsnNode> insnList, AbstractInsnNode node) {
         if (insnList.size() == 0) {
             insnList.add(node);
         } else {

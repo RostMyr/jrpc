@@ -12,11 +12,11 @@ import static com.github.rostmyr.jrpc.fibers.Fiber.*;
 public class TestFiberModel {
     private long sequence;
 
-//    public Fiber<Long> getSequence() {
-//        long id = sequence++;
-//        long result = id;
-//        return result(result);
-//    }
+    public Fiber<Long> getSequence() {
+        long id = sequence++;
+        long result = id;
+        return result(result);
+    }
 
     public Fiber<String> callFiber() {
         String fiberResult = call(fiberWithSeveralCalls());
@@ -37,7 +37,7 @@ public class TestFiberModel {
         String fiberResult = call(getFuture());
         return result(fiberWithSeveralCalls());
     }
-//
+
     public Fiber<String> callFutureInReturn() {
         return result(getFuture());
     }
@@ -69,11 +69,11 @@ public class TestFiberModel {
         return result(second);
     }
 
-//    public Fiber<String> fiberWithAssignment() {
-//        String first = "A";
-//        String second = join(first, "B");
-//        return result(first);
-//    }
+    public Fiber<String> fiberWithAssignment() {
+        String first = "A";
+        String second = join(first, "B");
+        return result(first);
+    }
 
     public Fiber<Integer> fiberWithImmediateReturn() {
         return result(1);
